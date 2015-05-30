@@ -23,6 +23,8 @@ Prevalence is the fastest possible and third simplest ACID persistence technique
   (with-open [p2 (prevayler! my-handler initial-state my-file)]     ; Next time you run,
     (assert (= @p2 "Event:A Event:B "))))                           ; the state is recovered.
 ```
+## Transient Mode for Tests
+Calling the prevayler! function without the file argument returns a transient prevayler the you can use for fast testing.
 
 ## What it Does
 

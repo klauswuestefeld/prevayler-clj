@@ -1,8 +1,21 @@
+# Advantages
+
+Prevalence is the fastest possible and third simplest ACID persistence technique, combining the two simplest ones: http://en.wikipedia.org/wiki/System_Prevalence
+
+"Simplicity is prerequisite for reliability." Dijkstra (1970)
+
+
+# Shortcomings
+
+- RAM: Requires enough RAM to hold all the data in your system.
+- Start-up time: Entire system is read into RAM.
+
+
 # Usage
 
-- Get enough RAM to hold all you data.
-- Model your business system as an event handling function.
-- Guarantee persistence like this:
+- Get enough RAM to hold all your data.
+- Model your business system as a pure (no I/O) event handling function.
+- Guarantee persistence by applying all events to you system through Prevayler, like this:
 ```
 (let [my-file (File. "my-file")
       my-handler (fn [state event] (str state "Event:" event " "))  ; Any function
@@ -18,7 +31,11 @@
     (assert (= @p2 "Event:A Event:B "))))
 ```
 
-# How it works internally
+# What it Does
+
+Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org/wiki/System_Prevalence): it keeps a snapshot of your business system state followed by a journal of events. On startup or crash recovery it reads the last state and reapplies all events since.
+
+# How it Works Internally
 
 If your persistence file is called "my-file", prevayler-clj will write files like this for you:
 

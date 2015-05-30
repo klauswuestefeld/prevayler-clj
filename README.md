@@ -20,8 +20,8 @@ Prevalence is the fastest possible and third simplest ACID persistence technique
     (handle! p1 "B")
     (assert (= @p1 "Event:A Event:B ")))                            ; Your system state
 
-  (with-open [p2 (prevayler! my-handler initial-state my-file)]
-    (assert (= @p2 "Event:A Event:B "))))
+  (with-open [p2 (prevayler! my-handler initial-state my-file)]     ; Next time you run,
+    (assert (= @p2 "Event:A Event:B "))))                           ; the state is recovered.
 ```
 
 ## What it Does

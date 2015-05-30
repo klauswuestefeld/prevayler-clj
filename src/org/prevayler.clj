@@ -39,6 +39,7 @@
 
 (defn- write-with-flush! [file-out obj-out obj]
   (.writeObject obj-out obj)
+  (.reset obj-out)
   (.flush obj-out)
   (.flush file-out))
 

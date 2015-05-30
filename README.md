@@ -36,7 +36,7 @@ Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org
 
 ## Files
 
-If your persistence file is called "my-file", prevayler-clj will write files like this for you:
+If your persistence file is called "my-file", for example, prevayler-clj will write files like this for you:
 
 ### my-file
 A Java serialization object stream with the system state at the moment the file was created followed by events.

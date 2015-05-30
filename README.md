@@ -34,7 +34,7 @@ Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org
 - Start-up time: Entire system is read into RAM.
 
 
-## How it Works Internally
+## Files
 
 If your persistence file is called "my-file", prevayler-clj will write files like this for you:
 
@@ -43,7 +43,7 @@ A Java serialization object stream with the system state at the moment the file 
 
 ### my-file.backup
 On startup, my-file is renamed to my-file.backup and a new my-file is created.
-This new my-file will only be consistent after the system state has been written to it so if my-file.backup exists, it takes precedence over my-file.
+This new my-file will only be consistent after the system state has been written to it so when my-file.backup exists, it takes precedence over my-file.
 
 ### my-file.backup-[timestamp]
 After a new consistent my-file is written, my-file.backup is renamed to this. You can keep these old versions or delete them.

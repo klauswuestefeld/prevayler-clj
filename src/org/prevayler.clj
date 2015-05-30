@@ -59,9 +59,10 @@
 
       (reify
         Prevayler
-          (handle! [_ event]
-            (write! event)
-            (swap! state handler event))
+          (handle! [this event]
+            (locking this
+              (write! event)
+              (swap! state handler event)))
         Closeable
           (close [_]
             (reset! state ::closed)

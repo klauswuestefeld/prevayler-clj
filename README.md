@@ -1,4 +1,4 @@
-## Advantages
+## Features
 
 Prevalence is the fastest possible and third simplest ACID persistence technique, combining the two simplest ones: http://en.wikipedia.org/wiki/System_Prevalence
 

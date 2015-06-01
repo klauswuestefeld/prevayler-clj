@@ -1,3 +1,5 @@
+[![Clojars Project](http://clojars.org/prevayler-clj/latest-version.svg)](http://clojars.org/prevayler-clj)
+
 ## Features
 
 Prevalence is the fastest possible and third simplest ACID persistence technique, combining the two simplest ones: http://en.wikipedia.org/wiki/System_Prevalence

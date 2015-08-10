@@ -4,16 +4,34 @@
     [clojure.lang IDeref]))
 
 (defprotocol Prevayler
-  (handle! [_ event]))
+  (handle! [_ event]
+    "Handle event and return vector containing the new state and event result."))
+
+(defn eval!
+  "Handle event and return event result."
+  [prevayler event]
+  (second (handle! prevayler event)))
+
+(defn step!
+  "Handle event and return new state."
+  [prevayler event]
+  (first (handle! prevayler event)))
+
+(defn- swap-with-result! [atom handler event]
+  (let [state-and-result (handler @atom event)]
+    (reset! atom (first state-and-result))
+    state-and-result))
 
 (defn backup-file [file]
   (File. (str file ".backup")))
 
 (defn- try-to-replay! [handler state file-in]
   (let [obj-in (ObjectInputStream. file-in)
-        read-obj! #(.readObject obj-in)]
+        read-obj! #(.readObject obj-in)
+        stepper (comp first handler)]
     (reset! state (read-obj!))
-    (loop [] (swap! state handler (read-obj!)) (recur)))) ; Throws EOFException
+    (while true  ; loop stops at EOFException
+      (swap! state stepper (read-obj!)))))
 
 (defn- replay! [handler state file]
   (with-open [file-in (FileInputStream. file)]
@@ -63,7 +81,7 @@
           (handle! [this event]
             (locking this
               (write! event)
-              (swap! state handler event)))
+              (swap-with-result! state handler event)))
         Closeable
           (close [_]
             (reset! state ::closed)
@@ -76,7 +94,9 @@
 (defn- transient-prevayler! [handler initial-state]
   (let [state (atom initial-state)]
     (reify
-      Prevayler (handle! [_ event] (swap! state handler event))
+      Prevayler (handle! [this event]
+                  (locking this
+                    (swap-with-result! state handler event)))
       IDeref (deref [_] @state)
       Closeable (close [_] (reset! state ::closed)))))
 

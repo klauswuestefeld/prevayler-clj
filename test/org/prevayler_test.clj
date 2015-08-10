@@ -13,7 +13,8 @@
     (.delete)))
 
 (facts "About prevalence"
-  (let [handler-fn str
+  (let [handler-fn (fn [state event] [(str state event)
+                                      (str "+" event)])
         initial-state "A"
         file (tmp-file)
 
@@ -26,20 +27,24 @@
     (fact "Restart after no events recovers initial state"
       (with-open [p (prev!)]
         @p => "A"
-        (handle! p "B")
+        (handle! p "B") => ["AB" "+B"]
         @p => "AB"
-        (handle! p "C")
-        @p => "ABC"))
+        (handle! p "C") => ["ABC" "+C"]
+        @p => "ABC"
+        (eval! p "D") => "+D"
+        @p => "ABCD"
+        (step! p "E") => "ABCDE"
+        @p => "ABCDE"))
 
     (fact "Restart after some events recovers last state"
       (with-open [p (prev!)]
-        @p => "ABC"))
+        @p => "ABCDE"))
 
     (fact "Simulated crash during restart is survived"
       (assert (.renameTo file (backup-file file)))
       (spit file "#$@%@corruption&@#$@")
       (with-open [p (prev!)]
-        @p => "ABC"))
+        @p => "ABCDE"))
 
     (fact "File is released after Prevayler is closed"
       (assert (.delete file)))))

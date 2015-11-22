@@ -13,8 +13,10 @@
     (.delete)))
 
 (facts "About prevalence"
-  (let [handler-fn (fn [state event] [(str state event)
-                                      (str "+" event)])
+  (let [handler-fn (fn [state event]
+                     (when (= event "boom") (throw (RuntimeException.)))
+                     [(str state event)
+                      (str "+" event)])
         initial-state "A"
         file (tmp-file)
 
@@ -30,6 +32,8 @@
         (handle! p "B") => ["AB" "+B"]
         @p => "AB"
         (handle! p "C") => ["ABC" "+C"]
+        @p => "ABC"
+        (handle! p "boom") => ["ABC" nil]
         @p => "ABC"
         (eval! p "D") => "+D"
         @p => "ABCD"

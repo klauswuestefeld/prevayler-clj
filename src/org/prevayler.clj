@@ -17,29 +17,29 @@
   [prevayler event]
   (first (handle! prevayler event)))
 
-(defn- swap-with-result! [atom handler event]
-  (let [state-and-result (handler @atom event)]
-    (reset! atom (first state-and-result))
+(defn- swap-with-result! [state-atom handler event]
+  (let [state-and-result (handler @state-atom event)]
+    (reset! state-atom (first state-and-result))
     state-and-result))
 
 (defn backup-file [file]
   (File. (str file ".backup")))
 
-(defn- try-to-replay! [handler state file-in]
+(defn- try-to-replay! [handler state-atom file-in]
   (let [obj-in (ObjectInputStream. file-in)
-        read-obj! #(.readObject obj-in)
-        stepper (comp first handler)]
-    (reset! state (read-obj!))
-    (while true  ; loop stops at EOFException
-      (swap! state stepper (read-obj!)))))
+        read-obj! #(.readObject obj-in)]
+    (reset! state-atom (read-obj!))
+    (try
+      (while true
+        (swap-with-result! state-atom handler (read-obj!)))
+      (catch EOFException _done))))
 
-(defn- replay! [handler state file]
+(defn- replay! [handler state-atom ^File file]
   (with-open [file-in (FileInputStream. file)]
     (try
-      (try-to-replay! handler state file-in)
+      (try-to-replay! handler state-atom file-in)
 
       (catch ClassNotFoundException cnfe (throw cnfe))
-      (catch EOFException _ok)
       (catch Exception corruption
         (println "Warning - Corruption at end of prevalence file (this is normally OK and can happen when process is killed during write):" corruption)))))
 
@@ -61,18 +61,27 @@
   (.flush obj-out)
   (.flush file-out))
 
-(defn- durable-prevayler! [handler initial-state file]
-  (let [state (atom initial-state)
+(defn- robust [handler]
+  (fn [state event]
+    (try
+      (handler state event)
+      (catch Exception ex
+        (println "Exception (" ex ") suppresed while handling event" event)
+        [state nil]))))
+
+(defn- durable-prevayler! [handler initial-state ^File file]
+  (let [state-atom (atom initial-state)
+        handler (robust handler)
         backup (produce-backup! file)]
 
     (when backup
-      (replay! handler state backup))
+      (replay! handler state-atom backup))
 
     (let [file-out (FileOutputStream. file)
           obj-out (ObjectOutputStream. file-out)
           write! (partial write-with-flush! file-out obj-out)]
 
-      (write! @state)
+      (write! @state-atom)
       (when backup
         (archive! backup))
 
@@ -81,24 +90,25 @@
           (handle! [this event]
             (locking this
               (write! event)
-              (swap-with-result! state handler event)))
+              (swap-with-result! state-atom handler event)))
         Closeable
           (close [_]
-            (reset! state ::closed)
+            (reset! state-atom ::closed)
             (.close obj-out)
             (.close file-out))
         IDeref
           (deref [_]
-            @state)))))
+            @state-atom)))))
 
 (defn- transient-prevayler! [handler initial-state]
-  (let [state (atom initial-state)]
+  (let [state-atom (atom initial-state)
+        handler (robust handler)]
     (reify
       Prevayler (handle! [this event]
                   (locking this
-                    (swap-with-result! state handler event)))
-      IDeref (deref [_] @state)
-      Closeable (close [_] (reset! state ::closed)))))
+                    (swap-with-result! state-atom handler event)))
+      IDeref (deref [_] @state-atom)
+      Closeable (close [_] (reset! state-atom ::closed)))))
 
 (defn prevayler!
   ([handler initial-state]      (transient-prevayler! handler initial-state))

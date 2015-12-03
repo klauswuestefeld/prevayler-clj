@@ -17,10 +17,9 @@
   [prevayler event]
   (first (handle! prevayler event)))
 
-(defn- swap-with-result! [state-atom handler event]
-  (let [state-and-result (handler @state-atom event)]
+(defn- swap-with-result! [state-atom state-and-result]
     (reset! state-atom (first state-and-result))
-    state-and-result))
+    state-and-result)
 
 (defn backup-file [file]
   (File. (str file ".backup")))
@@ -31,7 +30,7 @@
     (reset! state-atom (read-obj!))
     (try
       (while true
-        (swap-with-result! state-atom handler (read-obj!)))
+        (swap-with-result! state-atom (handler @state-atom (read-obj!))))
       (catch EOFException _done))))
 
 (defn- replay! [handler state-atom ^File file]
@@ -61,17 +60,8 @@
   (.flush obj-out)
   (.flush file-out))
 
-(defn- robust [handler]
-  (fn [state event]
-    (try
-      (handler state event)
-      (catch Exception ex
-        (println "Exception (" ex ") suppresed while handling event" event)
-        [state nil]))))
-
 (defn- durable-prevayler! [handler initial-state ^File file]
   (let [state-atom (atom initial-state)
-        handler (robust handler)
         backup (produce-backup! file)]
 
     (when backup
@@ -89,8 +79,9 @@
         Prevayler
           (handle! [this event]
             (locking this
-              (write! event)
-              (swap-with-result! state-atom handler event)))
+              (let [state-with-result (handler @state-atom event)]
+                (write! event)
+                (swap-with-result! state-atom state-with-result))))
         Closeable
           (close [_]
             (reset! state-atom ::closed)
@@ -101,12 +92,11 @@
             @state-atom)))))
 
 (defn- transient-prevayler! [handler initial-state]
-  (let [state-atom (atom initial-state)
-        handler (robust handler)]
+  (let [state-atom (atom initial-state)]
     (reify
       Prevayler (handle! [this event]
                   (locking this
-                    (swap-with-result! state-atom handler event)))
+                    (swap-with-result! state-atom (handler @state-atom event))))
       IDeref (deref [_] @state-atom)
       Closeable (close [_] (reset! state-atom ::closed)))))
 

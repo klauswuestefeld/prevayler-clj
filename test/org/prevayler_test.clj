@@ -33,8 +33,6 @@
         @p => "AB"
         (handle! p "C") => ["ABC" "+C"]
         @p => "ABC"
-        (handle! p "boom") => ["ABC" nil]
-        @p => "ABC"
         (eval! p "D") => "+D"
         @p => "ABCD"
         (step! p "E") => "ABCDE"
@@ -49,6 +47,16 @@
       (spit file "#$@%@corruption&@#$@")
       (with-open [p (prev!)]
         @p => "ABCDE"))
+
+    (fact "Simulated crash during event handle will fall through"
+      (with-open [p (prev!)]
+        (handle! p "boom") => (throws RuntimeException)
+        @p => "ABCDE"
+        (step! p "F") => "ABCDEF"))
+
+    (fact "Restart after some crash during event handle recovers last state"
+          (with-open [p (prev!)]
+            @p => "ABCDEF"))
 
     (fact "File is released after Prevayler is closed"
       (assert (.delete file)))))

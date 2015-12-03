@@ -17,10 +17,6 @@
   [prevayler event]
   (first (handle! prevayler event)))
 
-(defn- swap-with-result! [state-atom state-and-result]
-    (reset! state-atom (first state-and-result))
-    state-and-result)
-
 (defn backup-file [file]
   (File. (str file ".backup")))
 
@@ -28,16 +24,16 @@
   (let [obj-in (ObjectInputStream. file-in)
         read-obj! #(.readObject obj-in)]
     (reset! state-atom (read-obj!))
-    (try
-      (while true
-        (swap-with-result! state-atom (handler @state-atom (read-obj!))))
-      (catch EOFException _done))))
+    (while true           ;Ends with EOFException
+      (let [[new-state _result] (handler @state-atom (read-obj!))]
+        (reset! state-atom new-state)))))
 
 (defn- replay! [handler state-atom ^File file]
   (with-open [file-in (FileInputStream. file)]
     (try
       (try-to-replay! handler state-atom file-in)
 
+      (catch EOFException _done)
       (catch ClassNotFoundException cnfe (throw cnfe))
       (catch Exception corruption
         (println "Warning - Corruption at end of prevalence file (this is normally OK and can happen when process is killed during write):" corruption)))))
@@ -60,6 +56,13 @@
   (.flush obj-out)
   (.flush file-out))
 
+(defn- handle-event! [this handler state-atom write-fn event]
+  (locking this
+    (let [state-with-result (handler @state-atom event)]
+      (write-fn event)
+      (reset! state-atom (first state-with-result))
+      state-with-result)))
+
 (defn- durable-prevayler! [handler initial-state ^File file]
   (let [state-atom (atom initial-state)
         backup (produce-backup! file)]
@@ -78,10 +81,7 @@
       (reify
         Prevayler
           (handle! [this event]
-            (locking this
-              (let [state-with-result (handler @state-atom event)]
-                (write! event)
-                (swap-with-result! state-atom state-with-result))))
+            (handle-event! this handler state-atom write! event))
         Closeable
           (close [_]
             (reset! state-atom ::closed)
@@ -92,11 +92,11 @@
             @state-atom)))))
 
 (defn- transient-prevayler! [handler initial-state]
-  (let [state-atom (atom initial-state)]
+  (let [state-atom (atom initial-state)
+        no-write (fn [_ignored])]
     (reify
       Prevayler (handle! [this event]
-                  (locking this
-                    (swap-with-result! state-atom (handler @state-atom event))))
+                  (handle-event! this handler state-atom no-write event))
       IDeref (deref [_] @state-atom)
       Closeable (close [_] (reset! state-atom ::closed)))))
 

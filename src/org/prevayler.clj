@@ -20,7 +20,7 @@
 (defn backup-file [file]
   (File. (str file ".backup")))
 
-(defn- try-to-replay! [handler state-atom file-in]
+(defn- try-to-restore! [handler state-atom file-in]
   (let [obj-in (ObjectInputStream. file-in)
         read-obj! #(.readObject obj-in)]
     (reset! state-atom (read-obj!))
@@ -28,10 +28,10 @@
       (let [[new-state _result] (handler @state-atom (read-obj!))]
         (reset! state-atom new-state)))))
 
-(defn- replay! [handler state-atom ^File file]
+(defn- restore! [handler state-atom ^File file]
   (with-open [file-in (FileInputStream. file)]
     (try
-      (try-to-replay! handler state-atom file-in)
+      (try-to-restore! handler state-atom file-in)
 
       (catch EOFException _done)
       (catch ClassNotFoundException cnfe (throw cnfe))
@@ -68,7 +68,7 @@
         backup (produce-backup! file)]
 
     (when backup
-      (replay! handler state-atom backup))
+      (restore! handler state-atom backup))
 
     (let [file-out (FileOutputStream. file)
           obj-out (ObjectOutputStream. file-out)

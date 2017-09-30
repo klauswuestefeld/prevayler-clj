@@ -18,7 +18,7 @@ Prevalence is the fastest possible and third simplest ACID persistence technique
 
 (with-open [p1 (prevayler! my-system {})]
   (assert (= @p1 {}))                    ; The default initial state is an empty map.
-  (handle! p1 event1)                    ; Your events.
+  (handle! p1 event1)                    ; Your events can be any Clojure value or Serializable object.
   (handle! p1 event2)
   (assert (= @p1 new-state)))            ; Your system state with the events applied.
 

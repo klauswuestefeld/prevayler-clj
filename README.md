@@ -11,19 +11,21 @@ Prevalence is the fastest possible and third simplest ACID persistence technique
 - Get enough RAM to hold all your data.
 - Model your business system as a pure (no I/O) event handling function.
 - Guarantee persistence by applying all events to you system through Prevayler, like this:
+
 ```clojure
-(let [my-handler (fn [state event] [(str state "Event:" event " ") nil]) ; Any function returning a pair [new-state result]
-      initial-state ""]                                                  ; Any value
+(defn my-system [state event]            
+  ...)                                   ; Any function returning a pair [new-state event-result].
 
-  (with-open [p1 (prevayler! my-handler initial-state)]
-    (assert (= @p1 initial-state))
-    (handle! p1 "A")                                         ; Your events
-    (handle! p1 "B")
-    (assert (= @p1 "Event:A Event:B ")))                     ; Your system state
+(with-open [p1 (prevayler! my-system)]
+  (assert (= @p1 {}))                    ; The default initial state.
+  (handle! p1 event1)                    ; Your events.
+  (handle! p1 event2)
+  (assert (= @p1 new-state)))            ; Your system state with the events applied.
 
-  (with-open [p2 (prevayler! my-handler initial-state)]      ; Next time you run,
-    (assert (= @p2 "Event:A Event:B "))))                    ; the state is recovered.
+(with-open [p2 (prevayler! my-system)]   ; Next time you run,
+  (assert (= @p2 new-state)))            ; the state is recovered, even if there was a system crash.
 ```
+
 ## Transient Mode for Tests
 The transient-prevayler! function returns a transient prevayler the you can use for fast testing.
 

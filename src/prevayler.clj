@@ -71,6 +71,8 @@
       state-with-result)))
 
 (defn prevayler!
+  ([handler]
+   (prevayler! handler {}))
   ([handler initial-state]
    (prevayler! handler initial-state (File. "journal")))
   ([handler initial-state ^File file]

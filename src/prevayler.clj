@@ -19,15 +19,6 @@
   [prevayler event]
   (first (handle! prevayler event)))
 
-(defn transient-prevayler! [handler initial-state]
-  (let [state-atom (atom initial-state)
-        no-write (fn [_ignored])]
-    (reify
-      Prevayler (handle! [this event]
-                  (handle-event! this handler state-atom no-write event))
-      IDeref (deref [_] @state-atom)
-      Closeable (close [_] (reset! state-atom ::closed)))))
-
 (defn backup-file [file]
   (File. (str file ".backup")))
 
@@ -69,6 +60,15 @@
       (write-fn event)
       (reset! state-atom (first state-with-result))
       state-with-result)))
+
+(defn transient-prevayler! [handler initial-state]
+  (let [state-atom (atom initial-state)
+        no-write (fn [_ignored])]
+    (reify
+      Prevayler (handle! [this event]
+                  (handle-event! this handler state-atom no-write event))
+      IDeref (deref [_] @state-atom)
+      Closeable (close [_] (reset! state-atom ::closed)))))
 
 (defn prevayler!
   ([handler]

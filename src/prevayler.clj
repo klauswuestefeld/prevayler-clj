@@ -93,9 +93,8 @@
            (handle-event! this handler state-atom write! event))
          Closeable
          (close [_]
-           (reset! state-atom ::closed)
-           (.close data-out))
+           (.close data-out)
+           (reset! state-atom ::closed))
          IDeref
          (deref [_]
            @state-atom))))))
-

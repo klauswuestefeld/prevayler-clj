@@ -2,14 +2,14 @@
 
 ## Features
 
-Prevalence is the fastest possible and third simplest ACID persistence technique, combining the two simplest ones: http://en.wikipedia.org/wiki/System_Prevalence
+If your data fits in RAM, you can write your system as a pure Clojure function, without any database complexity. It will be much simpler, cleaner and orders of magnitude faster.
 
-"Simplicity is prerequisite for reliability." Dijkstra (1970)
+Prevayler takes care of persistence.
 
 ## Usage
 
 - Get enough RAM to hold all your data.
-- Model your business system as a pure (no I/O) event handling function.
+- Implement the business logic of your system as a pure event handling function. Keep the I/O handling logic separate.
 - Guarantee persistence by applying all events to you system through Prevayler, like this:
 
 ```clojure
@@ -26,18 +26,14 @@ Prevalence is the fastest possible and third simplest ACID persistence technique
   (assert (= @p2 new-state)))            ; the state is recovered, even if there was a system crash.
 ```
 
-## Transient Mode for Tests
-The transient-prevayler! function returns a transient prevayler the you can use for fast testing.
-
 ## What it Does
 
-Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org/wiki/System_Prevalence): it keeps a snapshot of your business system state followed by a journal of events. On startup or crash recovery it reads the last state and reapplies all events since.
+Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org/wiki/System_Prevalence): it keeps a snapshot of your business system state followed by a journal of events. On startup or crash recovery it reads the last state and reapplies all events since: your system is restored to where it was.
 
 ## Shortcomings
 
 - RAM: Requires enough RAM to hold all the data in your system.
 - Start-up time: Entire system is read into RAM.
-
 
 ## Files
 
@@ -52,3 +48,10 @@ This new journal will only be consistent after the system state has been written
 
 ### journal.backup-[timestamp]
 After a new consistent journal is written, journal.backup is renamed with a timestamp appendix. You can keep these old versions elsewhere if you like. Prevayler no longer uses them.
+
+## Transient Mode for Tests
+The transient-prevayler! function returns a transient prevayler the you can use for fast testing.
+
+---
+
+"Simplicity is prerequisite for reliability." Dijkstra (1970)

@@ -3,7 +3,7 @@
   :url "https://github.com/klauswuestefeld/prevayler-clj"
   :license {:name "BSD"
             :url "http://opensource.org/licenses/BSD-3-Clause"}
-  :dependencies [[org.clojure/clojure "1.5.1"]
+  :dependencies [[org.clojure/clojure "1.9.0"]
                  [com.taoensso/nippy "2.13.0"]]
   :profiles {:dev {:dependencies [[midje "1.6.3"]]
                    :plugins [[lein-midje "3.1.3"]]}}

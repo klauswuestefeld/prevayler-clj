@@ -1,8 +1,6 @@
 (ns prevayler2
-  (:require [taoensso.nippy :as nippy]
-            [clojure.main :refer [demunge]])
   (:import
-    [java.io File FileOutputStream FileInputStream DataInputStream DataOutputStream EOFException]
+    [java.io File FileOutputStream FileInputStream EOFException ObjectOutputStream ObjectInputStream]
     [clojure.lang Atom IAtom IDeref]
     [com.sun.xml.internal.ws Closeable]))
 
@@ -17,19 +15,13 @@
     [_ _ _ _ _ _ _ _]
     [_ _ _ _ _ _ _ _ _]))
 
-(defn fn-name [f]
-  (as-> (str f) $
-    (demunge $)
-    (or (re-find #"(.+)--\d+@" $)
-      (re-find #"(.+)@" $))
-    (last $)))
-
 (defn handle-event!
-  [this write-fn state-atom fn & args]
+  [this write-fn state-atom & args]
   (locking this
-    (let [params            (remove nil? args)
+    (let [fn                (first args)
+          params            (rest args)
           state-with-result (apply (partial swap! state-atom fn) params)]
-      (write-fn [(fn-name fn) params])
+      (write-fn args)
       state-with-result)))
 
 (defn transient-prevayler! [initial-state]
@@ -53,9 +45,8 @@
       Closeable
       (close [_] (reset! state-atom ::closed)))))
 
-(defn- write-with-flush! [data-out value]
-  (nippy/freeze-to-out! data-out value)
-  (.flush data-out))
+(defn write-obj [oos o]
+  (.writeObject oos o))
 
 (defn backup-file [file]
   (File. (str file ".backup")))
@@ -69,18 +60,22 @@
         backup))))
 
 (defn- try-to-restore! [state-atom data-in]
-  (let [read-value! #(nippy/thaw-from-in! data-in)]
-    (while true                                             ;Ends with EOFException
-      (let [[fn params] (read-value!)]
-        (apply (partial swap! state-atom (ns-resolve *ns* (symbol fn))) params)))))
+  (let [read-value! #(.readObject data-in)]
+    (while true
+      (let [[& params] (read-value!)]
+        (apply (partial swap! state-atom) params)))))
+
+(defn- initial-value-restore! [state-atom data-in]
+  (let [initial-state (.readObject data-in)]
+    (reset! state-atom initial-state)))
 
 (defn restore! [state-atom ^File file]
-  (with-open [data-in (-> file FileInputStream. DataInputStream.)]
-    (try
-      (try-to-restore! state-atom data-in)
-      (catch EOFException _done)
-      (catch Exception corruption
-        (println "Warning - Corruption at end of prevalence file (this is normally OK and can happen when the process is killed during write):" corruption)))))
+  (try
+    (with-open [data-in (ObjectInputStream. (FileInputStream. file))]
+      (do
+        (initial-value-restore! state-atom data-in)
+        (try-to-restore! state-atom data-in)))
+    (catch EOFException _done)))
 
 (defn prevayler! [initial-state ^File file]
   (let [state-atom (atom initial-state)
@@ -89,8 +84,11 @@
     (when backup
       (restore! state-atom backup))
 
-    (let [data-out (-> file FileOutputStream. DataOutputStream.)
-          write!   (partial write-with-flush! data-out)]
+    (let [obj-out-stream (ObjectOutputStream. (FileOutputStream. file))
+          write!   (partial write-obj obj-out-stream)]
+
+      (write! initial-state)
+
       ;reify doesn't support varargs :(
       (reify
         Prevayler2
@@ -104,6 +102,6 @@
         (handle! [this fn x y z k l m n] (handle-event! this write! state-atom fn x y z k l m n))
 
         Closeable
-        (close [_] (.close data-out))
+        (close [_] (.close obj-out-stream))
         IDeref
         (deref [_] @state-atom)))))

@@ -2,25 +2,21 @@
 #
 # Check https://circleci.com/docs/2.0/language-clojure/ for more details
 #
-version: 2
+version: 2.1
+
+job_defaults: &defaults
+  docker:
+    - image: circleci/clojure:lein-2.7.1
+  working_directory: ~/repo
+  environment:
+    LEIN_ROOT: "true"
+    # Customize the JVM maximum heap limit
+    JVM_OPTS: "-Xmx3600m"
+    ENVIRONMENT: "test"
+
 jobs:
   build:
-    docker:
-      # specify the version you desire here
-      - image: circleci/clojure:lein-2.7.1
-
-      # Specify service dependencies here if necessary
-      # CircleCI maintains a library of pre-built images
-      # documented at https://circleci.com/docs/2.0/circleci-images/
-      # - image: circleci/postgres:9.4
-
-    working_directory: ~/repo
-
-    environment:
-      LEIN_ROOT: "true"
-      # Customize the JVM maximum heap limit
-      JVM_OPTS: -Xmx3200m
-
+    <<: *defaults
     steps:
       - checkout
 
@@ -41,6 +37,17 @@ jobs:
       # run tests!
       - run: lein test
 
-      - run: lein cloverage --codecov
+  coverage:
+    <<: *defaults
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "project.clj" }}
+            # fallback to using the latest cache if no exact match is found
+            - v1-dependencies-
+      - run:
+          name: 'Run Coverage test'
+          command: lein cloverage --codecov
 
       - run: bash <(curl -s https://codecov.io/bash)

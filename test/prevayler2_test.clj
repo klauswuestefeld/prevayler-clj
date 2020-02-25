@@ -67,6 +67,10 @@
               {:users {:123 {:email "user1@teste123.com"}
                        :124 {:email "user2@gmail.com"}}}))
 
+        (is (= (handle! p update-in [:users :123 :email] (constantly "user1@teste123.com"))
+              {:users {:123 {:email "user1@teste123.com"}
+                       :124 {:email "user2@gmail.com"}}}))
+
         ; Anonymous function not supported yet
         ;(is (= (handle! p update-in [:users :123 :email] (fn [_] "user1@teste123.com"))
         ;      {:users {:123 {:email "user1@teste123.com"}

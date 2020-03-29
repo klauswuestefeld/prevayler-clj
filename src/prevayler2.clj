@@ -77,6 +77,10 @@
         (try-to-restore! state-atom data-in)))
     (catch EOFException _done)))
 
+(defn- archive! [^File file]
+  (let [new-file (File. (str file "-" (System/currentTimeMillis)))]
+    (assert (.renameTo file new-file))))
+
 (defn prevayler! [initial-state ^File file]
   (let [state-atom (atom initial-state)
         backup (produce-backup! file)]
@@ -87,7 +91,10 @@
     (let [obj-out-stream (ObjectOutputStream. (FileOutputStream. file))
           write!   (partial write-obj obj-out-stream)]
 
-      (write! initial-state)
+      (write! @state-atom)
+
+      (when backup
+        (archive! backup))
 
       ;reify doesn't support varargs :(
       (reify

@@ -13,7 +13,7 @@ job_defaults: &defaults
     # Customize the JVM maximum heap limit
     JVM_OPTS: "-Xmx3600m"
     ENVIRONMENT: "test"
-
+    CODECOV_TOKEN: "ff95874f-0a5a-49ec-87e5-0518564e6dbe"
 jobs:
   build:
     <<: *defaults
@@ -51,3 +51,10 @@ jobs:
           command: lein cloverage --codecov
 
       - run: bash <(curl -s https://codecov.io/bash)
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+      - build
+      - coverage

@@ -1,7 +1,6 @@
 (ns prevayler2-test
   (:require [clojure.test :refer :all]
-            [prevayler2 :refer :all]
-            [matcher-combinators.test])
+            [prevayler2 :refer :all])
   (:import [java.io File]))
 
 (defn my-identity [_] "xyz")

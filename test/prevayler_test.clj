@@ -12,6 +12,12 @@
     (throw (RuntimeException.)))
   (str state event))
 
+(fact "journal4 is the default file name"
+  (->
+    (prevayler! {:handler handler})
+    (.close))
+  (.delete (File. "journal4")) => true)
+
 (def initial-state "A")
 
 (defn- tmp-file []
@@ -20,15 +26,10 @@
     (.delete)))
 
 (facts "About prevalence"
-
-  (fact "journal4 is the default file name"
-    (->    
-      (prevayler! handler initial-state)
-      (.close)) 
-    (.delete (File. "journal4")) => true)
-        
-  (let [file (tmp-file)
-        prev! #(prevayler! handler initial-state file)]
+  (let [journal (tmp-file)
+        prev! #(prevayler! {:initial-state initial-state
+                            :journal-file journal
+                            :handler handler})]
 
     (fact "First run uses initial state"
       (with-open [p (prev!)]
@@ -47,8 +48,8 @@
         @p => "ABC"))
 
     (fact "Simulated crash during restart is survived"
-      (.renameTo file (File. (str file ".backup"))) => true
-      (spit file "#$@%@corruption&@#$@")
+      (.renameTo journal (File. (str journal ".backup"))) => true
+      (spit journal "#$@%@corruption&@#$@")
       (with-open [p (prev!)]
         @p => "ABC"))
     
@@ -62,5 +63,5 @@
       (with-open [p (prev!)]
         @p => "ABCD"))
 
-    (fact "File is released after Prevayler is closed"
-      (.delete file) => true)))
+    (fact "Journal file is released after Prevayler is closed (Relevant in Windows)."
+      (.delete journal) => true)))

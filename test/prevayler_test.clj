@@ -1,16 +1,16 @@
 (ns prevayler-test
   (:require
-    [prevayler :refer :all]
-    [midje.sweet :refer :all])
+    [prevayler4 :refer [prevayler! handle!]]
+    [midje.sweet :refer [facts fact => throws]])
   (:import
     [java.io File]))
 
 ; (do (require 'midje.repl) (midje.repl/autotest))
 
 (defn- handler [state event]
-  (when (= event "boom") (throw (RuntimeException.)))
-  [(str state event)
-   (str "+" event)])
+  (when (= event "boom")
+    (throw (RuntimeException.)))
+  (str state event))
 
 (def initial-state "A")
 
@@ -19,13 +19,14 @@
     (File/createTempFile "test-" ".tmp")
     (.delete)))
 
-(facts "About transient prevayler"
-  (with-open [p (transient-prevayler! handler initial-state)]
-    @p => "A"
-    (handle! p "B") => ["AB" "+B"]
-    @p => "AB"))
-
 (facts "About prevalence"
+
+  (fact "journal4 is the default file name"
+    (->    
+      (prevayler! handler initial-state)
+      (.close)) 
+    (.delete (File. "journal4")) => true)
+        
   (let [file (tmp-file)
         prev! #(prevayler! handler initial-state file)]
 
@@ -36,34 +37,30 @@
     (fact "Restart after no events recovers initial state"
       (with-open [p (prev!)]
         @p => "A"
-        (handle! p "B") => ["AB" "+B"]
+        (handle! p "B") => "AB"
         @p => "AB"
-        (handle! p "C") => ["ABC" "+C"]
-        @p => "ABC"
-        (eval! p "D") => "+D"
-        @p => "ABCD"
-        (step! p "E") => "ABCDE"
-        @p => "ABCDE"))
+        (handle! p "C") => "ABC"
+        @p => "ABC"))
 
     (fact "Restart after some events recovers last state"
       (with-open [p (prev!)]
-        @p => "ABCDE"))
+        @p => "ABC"))
 
     (fact "Simulated crash during restart is survived"
-      (assert (.renameTo file (backup-file file)))
+      (.renameTo file (File. (str file ".backup"))) => true
       (spit file "#$@%@corruption&@#$@")
       (with-open [p (prev!)]
-        @p => "ABCDE"))
-
+        @p => "ABC"))
+    
     (fact "Simulated crash during event handle will fall through"
       (with-open [p (prev!)]
         (handle! p "boom") => (throws RuntimeException)
-        @p => "ABCDE"
-        (step! p "F") => "ABCDEF"))
+        @p => "ABC"
+        (handle! p "D") => "ABCD"))
 
     (fact "Restart after some crash during event handle recovers last state"
       (with-open [p (prev!)]
-        @p => "ABCDEF"))
+        @p => "ABCD"))
 
     (fact "File is released after Prevayler is closed"
       (assert (.delete file)))))

@@ -37,20 +37,17 @@ Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org
 
 ## Files
 
-Prevayler's default file name is "journal" but you can pass in your own file. Prevayler-clj will create and write to it like this:
+Prevayler's default file name is "journal4" but you can pass in your own file. Prevayler-clj will create and write to it like this:
 
-### journal
+### journal4
 Contains the state at the moment your system was last started, followed by all events since. Serialization is done using [Nippy](https://github.com/ptaoussanis/nippy).
 
-### journal.backup
+### journal4.backup
 On startup, the journal is renamed to journal.backup and a new journal file is created.
 This new journal will only be consistent after the system state has been written to it so when journal.backup exists, it takes precedence over journal.
 
-### journal.backup-[timestamp]
+### journal4.backup-[timestamp]
 After a new consistent journal is written, journal.backup is renamed with a timestamp appendix. You can keep these old versions elsewhere if you like. Prevayler no longer uses them.
-
-## Transient Mode for Tests
-The transient-prevayler! function returns a transient prevayler the you can use for fast testing.
 
 ---
 

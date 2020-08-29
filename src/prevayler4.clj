@@ -1,4 +1,4 @@
-(ns prevayler
+(ns prevayler4
   (:require
     [taoensso.nippy :as nippy])
   (:import
@@ -9,25 +9,12 @@
   (handle! [_ event]
     "Handle event and return vector containing the new state and event result."))
 
-(defn eval!
-  "Handle event and return event result."
-  [prevayler event]
-  (second (handle! prevayler event)))
-
-(defn step!
-  "Handle event and return new state."
-  [prevayler event]
-  (first (handle! prevayler event)))
-
-(defn backup-file [file]
-  (File. (str file ".backup")))
-
 (defn- try-to-restore! [handler state-atom data-in]
   (let [read-value! #(nippy/thaw-from-in! data-in)]
-    (reset! state-atom (read-value!))
-    (while true           ;Ends with EOFException
-      (let [[new-state _result] (handler @state-atom (read-value!))]
-        (reset! state-atom new-state)))))
+    (reset! state-atom (read-value!)) ;Can throw EOFException
+    (while true ;Ends with EOFException
+      (let [event (read-value!)]
+        (swap! state-atom handler event)))))
 
 (defn- restore! [handler state-atom ^File file]
   (with-open [data-in (-> file FileInputStream. DataInputStream.)]
@@ -39,7 +26,7 @@
         (println "Warning - Corruption at end of prevalence file (this is normally OK and can happen when the process is killed during write):" corruption)))))
 
 (defn- produce-backup! [file]
-  (let [backup (backup-file file)]
+  (let [backup (File. (str file ".backup"))]
     (if (.exists backup)
       backup
       (when (.exists file)
@@ -54,27 +41,11 @@
   (nippy/freeze-to-out! data-out value)
   (.flush data-out))
 
-(defn- handle-event! [this handler state-atom write-fn event]
-  (locking this
-    (let [state-with-result (handler @state-atom event)]
-      (write-fn event)
-      (reset! state-atom (first state-with-result))
-      state-with-result)))
-
-(defn transient-prevayler! [handler initial-state]
-  (let [state-atom (atom initial-state)
-        no-write (fn [_ignored])]
-    (reify
-      Prevayler (handle! [this event]
-                  (handle-event! this handler state-atom no-write event))
-      IDeref (deref [_] @state-atom)
-      Closeable (close [_] (reset! state-atom ::closed)))))
-
 (defn prevayler!
   ([handler]
    (prevayler! handler {}))
   ([handler initial-state]
-   (prevayler! handler initial-state (File. "journal")))
+   (prevayler! handler initial-state (File. "journal4")))
   ([handler initial-state ^File file]
    (let [state-atom (atom initial-state)
          backup (produce-backup! file)]
@@ -82,21 +53,20 @@
      (when backup
        (restore! handler state-atom backup))
 
-     (let [data-out (-> file FileOutputStream. DataOutputStream.)
-           write! (partial write-with-flush! data-out)]
+     (let [data-out (-> file FileOutputStream. DataOutputStream.)]
+       (write-with-flush! data-out @state-atom)
 
-       (write! @state-atom)
        (when backup
          (archive! backup))
 
        (reify
          Prevayler
          (handle! [this event]
-           (handle-event! this handler state-atom write! event))
-         Closeable
-         (close [_]
-           (.close data-out)
-           (reset! state-atom ::closed))
-         IDeref
-         (deref [_]
-           @state-atom))))))
+           (locking this ; (I)solation: strict serializability.
+             (let [state (handler @state-atom event)] ; (C)onsistency: must be guaranteed by the handler. The event won't be written when handler throws exception.)
+               (write-with-flush! data-out event) ; (D)urability
+               (reset! state-atom state)))) ; (A)tomicity
+         
+         Closeable (close [_] (.close data-out))
+
+         IDeref (deref [_] @state-atom))))))

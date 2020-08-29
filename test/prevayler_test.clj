@@ -5,8 +5,6 @@
   (:import
     [java.io File]))
 
-; (do (require 'midje.repl) (midje.repl/autotest))
-
 (defn- handler [state event]
   (when (= event "boom")
     (throw (RuntimeException.)))
@@ -65,3 +63,5 @@
 
     (fact "Journal file is released after Prevayler is closed (Relevant in Windows)."
       (.delete journal) => true)))
+
+; (do (require 'midje.repl) (midje.repl/autotest))

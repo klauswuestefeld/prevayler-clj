@@ -63,4 +63,4 @@
         @p => "ABCD"))
 
     (fact "File is released after Prevayler is closed"
-      (assert (.delete file)))))
+      (.delete file) => true)))

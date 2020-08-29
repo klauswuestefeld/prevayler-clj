@@ -11,7 +11,8 @@
 
 (defn- try-to-restore! [handler state-atom data-in]
   (let [read-value! #(nippy/thaw-from-in! data-in)]
-    (reset! state-atom (read-value!)) ;Can throw EOFException
+    (let [previous-state (read-value!)] ; Can throw EOFException
+      (reset! state-atom previous-state))
     (while true ;Ends with EOFException
       (let [event (read-value!)]
         (swap! state-atom handler event)))))
@@ -55,7 +56,6 @@
 
      (let [data-out (-> file FileOutputStream. DataOutputStream.)]
        (write-with-flush! data-out @state-atom)
-
        (when backup
          (archive! backup))
 
@@ -63,9 +63,9 @@
          Prevayler
          (handle! [this event]
            (locking this ; (I)solation: strict serializability.
-             (let [state (handler @state-atom event)] ; (C)onsistency: must be guaranteed by the handler. The event won't be written when handler throws exception.)
+             (let [new-state (handler @state-atom event)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.)
                (write-with-flush! data-out event) ; (D)urability
-               (reset! state-atom state)))) ; (A)tomicity
+               (reset! state-atom new-state)))) ; (A)tomicity
          
          Closeable (close [_] (.close data-out))
 

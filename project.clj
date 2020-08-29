@@ -1,4 +1,4 @@
-(defproject prevayler-clj "3.0.1"
+(defproject prevayler-clj "3.1.0-SNAPSHOT"
   :description "Simple, fast, ACID persistence in Clojure."
   :url "https://github.com/klauswuestefeld/prevayler-clj"
   :license {:name "BSD"
@@ -8,4 +8,4 @@
   :profiles {:dev {:dependencies [[midje "1.6.3"]]
                    :plugins [[lein-midje "3.1.3"]]}}
 
-  :repositories [["clojars" { :sign-releases false}]])
+  :repositories [["clojars" {:sign-releases false}]])

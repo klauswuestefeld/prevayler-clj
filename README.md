@@ -10,44 +10,44 @@ Prevayler takes care of persistence.
 
 - Get enough RAM to hold all your data.
 - Implement the business logic of your system as a pure event handling function. Keep any I/O logic (accessing some web service, for example) separate.
-- Guarantee persistence by applying all events to you system through Prevayler, like this:
+- Guarantee persistence by applying all events to you business system through Prevayler, like this:
 
 ```clojure
-(defn my-system [state event]            
-  ...)                                   ; Any function returning a pair [new-state event-result].
+(defn my-business [state event timestamp]            
+  ...)                                   ; Your business logic as a pure function. Returns the new state with event applied.
 
-(with-open [p1 (prevayler! my-system)]
+(with-open [p1 (prevayler! {:business-fn my-business})]
   (assert (= @p1 {}))                    ; The default initial state is an empty map.
   (handle! p1 event1)                    ; Your events can be any Clojure value or Serializable object.
   (handle! p1 event2)
   (assert (= @p1 new-state)))            ; Your system state with the events applied.
 
-(with-open [p2 (prevayler! my-system)]   ; Next time you run,
+(with-open [p2 (prevayler! my-business)] ; Next time you run,
   (assert (= @p2 new-state)))            ; the state is recovered, even if there was a system crash.
 ```
 
 ## What it Does
 
-Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org/wiki/System_Prevalence): it keeps a snapshot of your business system state followed by a journal of events. On startup or crash recovery it reads the last state and reapplies all events since: your system is restored to where it was.
+Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org/wiki/System_Prevalence): it keeps a snapshot of your business state followed by a journal of events. On startup or crash recovery it reads the last state and reapplies all events since: your business state is restored to where it was.
 
 ## Shortcomings
 
-- RAM: Requires enough RAM to hold all the data in your system.
-- Start-up time: Entire system is read into RAM.
+- RAM: Requires enough RAM to hold all the data in your business state.
+- Start-up time: Entire state is read into RAM.
 
 ## Files
 
-Prevayler's default file name is "journal4" but you can pass in your own file. Prevayler-clj will create and write to it like this:
+Prevayler's default file name is `journal4` but you can pass in your own file (see tests). Prevayler-clj will create and write to it like this:
 
 ### journal4
 Contains the state at the moment your system was last started, followed by all events since. Serialization is done using [Nippy](https://github.com/ptaoussanis/nippy).
 
 ### journal4.backup
-On startup, the journal is renamed to journal.backup and a new journal file is created.
-This new journal will only be consistent after the system state has been written to it so when journal.backup exists, it takes precedence over journal.
+On startup, the journal is renamed to `journal4.backup` and a new `journal4` file is created.
+This new journal will only be consistent after the business state has been written to it so when `journal.backup` exists, it takes precedence over `journal4`.
 
 ### journal4.backup-[timestamp]
-After a new consistent journal is written, journal.backup is renamed with a timestamp appendix. You can keep these old versions elsewhere if you like. Prevayler no longer uses them.
+After a new consistent journal is written, `journal.backup` is renamed with a timestamp appendix. You can keep these old versions elsewhere if you like. Prevayler-clj no longer uses them.
 
 ---
 

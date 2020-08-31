@@ -1,4 +1,4 @@
-(ns prevayler4
+(ns prevayler-clj.prevayler4
   (:require
     [taoensso.nippy :as nippy])
   (:import

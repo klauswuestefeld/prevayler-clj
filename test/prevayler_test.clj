@@ -1,6 +1,6 @@
 (ns prevayler-test
   (:require
-    [prevayler4 :refer [prevayler! handle!]]
+    [prevayler-clj.prevayler4 :refer [prevayler! handle!]]
     [midje.sweet :refer [facts fact => throws]])
   (:import
     [java.io File]))

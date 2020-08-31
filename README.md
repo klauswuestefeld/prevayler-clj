@@ -1,4 +1,4 @@
-[![Clojars Project](http://clojars.org/prevayler-clj/latest-version.svg)](http://clojars.org/prevayler-clj)
+[![Clojars Project](http://clojars.org/prevayler-clj/prevayler4/latest-version.svg)](http://clojars.org/prevayler-clj/prevayler4)
 
 ## Features
 

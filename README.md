@@ -44,10 +44,10 @@ Contains the state at the moment your system was last started, followed by all e
 
 ### journal4.backup
 On startup, the journal is renamed to `journal4.backup` and a new `journal4` file is created.
-This new journal will only be consistent after the business state has been written to it so when `journal.backup` exists, it takes precedence over `journal4`.
+This new journal will only be consistent after the business state has been written to it so when `journal4.backup` exists, it takes precedence over `journal4`.
 
 ### journal4.backup-[timestamp]
-After a new consistent journal is written, `journal.backup` is renamed with a timestamp appendix. You can keep these old versions elsewhere if you like. Prevayler-clj no longer uses them.
+After a new consistent journal is written, `journal4.backup` is renamed with a timestamp appendix. You can keep these old files elsewhere if you like. Prevayler no longer uses them.
 
 ---
 

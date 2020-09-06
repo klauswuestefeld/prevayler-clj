@@ -1,6 +1,6 @@
 [![Clojars Project](http://clojars.org/prevayler-clj/prevayler4/latest-version.svg)](http://clojars.org/prevayler-clj/prevayler4)
 
-## Features
+## Feature
 
 Write your business logic as a pure event-handling Clojure function, without any database complexity. It will be much simpler and orders of magnitude faster.
 

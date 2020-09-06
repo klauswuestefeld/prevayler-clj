@@ -2,7 +2,7 @@
 
 ## Features
 
-Write your business logic as a pure Clojure function, without any database complexity. It will be much simpler, cleaner and orders of magnitude faster.
+Write your business logic as a pure event-handling Clojure function, without any database complexity. It will be much simpler and orders of magnitude faster.
 
 Prevayler takes care of persistence.
 

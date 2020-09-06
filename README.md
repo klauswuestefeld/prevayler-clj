@@ -2,7 +2,7 @@
 
 ## Features
 
-If your data fits in RAM, you can write your system as a pure Clojure function, without any database complexity. It will be much simpler, cleaner and orders of magnitude faster.
+Write your business logic as a pure Clojure function, without any database complexity. It will be much simpler, cleaner and orders of magnitude faster.
 
 Prevayler takes care of persistence.
 

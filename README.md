@@ -6,6 +6,8 @@ Write your business logic as a pure event-handling Clojure function, without any
 
 Prevayler takes care of persistence.
 
+See what's [new in Prevayler4](CHANGELOG.md).
+
 ## Usage
 
 - Get enough RAM to hold all your data.

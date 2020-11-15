@@ -1,6 +1,6 @@
 (ns prevayler-test
   (:require
-    [prevayler-clj.prevayler4 :refer [prevayler! handle!]]
+    [prevayler-clj.prevayler4 :refer [prevayler! handle! timestamp]]
     [midje.sweet :refer [facts fact => throws]])
   (:import
     [java.io File]))
@@ -25,7 +25,7 @@
   (let [counter-atom (atom start)]
     #(swap! counter-atom inc)))
 
-(def t0 1598801265000)  ; System/currentTimeMillis at some arbitrary moment in the past.
+(def t0 1598800000000)  ; System/currentTimeMillis at some arbitrary moment in the past.
 
 (facts "About prevalence"
   (with-open [p (prevayler! {:initial-state initial-state
@@ -43,7 +43,11 @@
                             :business-fn contact-list
                             :timestamp-fn counter ; Timestamps must be controlled while testing.
                             :journal-file journal})]
- 
+        
+    (fact "The timestamp is accessible."
+      (with-open [p (prev!)]
+        (timestamp p) => 1598800000001))
+    
     (fact "First run uses initial state"
       (with-open [p (prev!)]
         (:contacts @p) => []))
@@ -52,7 +56,7 @@
       (with-open [p (prev!)]
         (:contacts @p) => []
         (handle! p "Ann") => {:contacts ["Ann"]
-                              :last-timestamp 1598801265001}
+                              :last-timestamp 1598800000002}
         (:contacts @p) => ["Ann"]
         (handle! p "Bob")
         (:contacts @p) => ["Ann" "Bob"]))
@@ -67,7 +71,7 @@
       (with-open [p (prev!)]
         (:contacts @p) => ["Ann" "Bob"]))
     
-    (fact "Simulated crash during event handle will fall through"
+    (fact "Exception during event handle doesn't affect state"
       (with-open [p (prev!)]
         (handle! p "boom") => (throws RuntimeException)
         (:contacts @p) => ["Ann" "Bob"]
@@ -77,6 +81,6 @@
     (fact "Restart after some crash during event handle recovers last state"
       (with-open [p (prev!)]
         @p => {:contacts ["Ann" "Bob" "Cid"]
-               :last-timestamp 1598801265004}))))
+               :last-timestamp 1598800000005}))))
 
 ; (do (require 'midje.repl) (midje.repl/autotest))

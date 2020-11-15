@@ -43,7 +43,8 @@
   (rename! backup (File. (str backup "-" (System/currentTimeMillis)))))
 
 (defprotocol Prevayler
-  (handle! [_ event] "Journals the event, applies the business function to the state and the event; and returns the new state."))
+  (handle! [this event] "Journals the event, applies the business function to the state and the event; and returns the new state.")
+  (timestamp [this] "Calls the timestamp-fn"))
 
 (defn prevayler! [{:keys [initial-state business-fn timestamp-fn journal-file]
                    :or {initial-state {}
@@ -68,6 +69,7 @@
                   new-state (business-fn @state-atom event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.)
               (write-with-flush! data-out [timestamp event]) ; (D)urability
               (reset! state-atom new-state)))) ; (A)tomicity
+        (timestamp [_] (timestamp-fn))
 
         IDeref (deref [_] @state-atom)
         

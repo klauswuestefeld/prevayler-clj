@@ -12,3 +12,5 @@ pom.xml.asc
 *.iml
 .calva
 journal*
+.clj-kondo
+.lsp

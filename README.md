@@ -12,7 +12,7 @@ See what's [new in Prevayler4](CHANGELOG.md).
 
 - Get enough RAM to hold all your data.
 - Implement the business logic of your system as a pure event handling function. Keep any I/O logic (accessing some web service, for example) separate.
-- Guarantee persistence by applying all events to you business system through Prevayler, like this:
+- Guarantee persistence by applying all events to your business system through Prevayler, like this:
 
 ```clojure
 (defn my-business [state event timestamp]            

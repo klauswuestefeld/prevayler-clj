@@ -6,6 +6,4 @@
   :dependencies [[org.clojure/clojure "1.10.1"]
                  [com.taoensso/nippy "2.15.1"]]
   :profiles {:dev {:dependencies [[midje "1.9.9"]]
-                   :plugins [[lein-midje "3.1.3"]]}}
-
-  :repositories [["clojars" {:sign-releases false}]])
+                   :plugins [[lein-midje "3.1.3"]]}})

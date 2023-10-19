@@ -30,7 +30,7 @@ See what's [new in Prevayler4](CHANGELOG.md).
 
 ## How it Works
 
-Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org/wiki/System_Prevalence): it keeps a snapshot of your business state followed by a journal of events. On startup or crash recovery it reads the last state and reapplies all events since: your business state is restored to where it was.
+Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org/wiki/System_Prevalence): it keeps a file with a snapshot of your business state followed by a journal of events. On startup or crash recovery it reads the last snapshot and reapplies all events since: your business state is restored to where it was.
 
 ## Shortcomings
 

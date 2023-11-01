@@ -37,7 +37,7 @@ Prevayler-clj implements the [system prevalence pattern](http://en.wikipedia.org
 - RAM: Requires enough RAM to hold all the data in your business state.
 - Start-up time: Entire state is read into RAM.
 
-## Files
+## File Format
 
 Prevayler's default file name is `journal4` but you can pass in your own file (see tests). Prevayler-clj will create and write to it like this:
 

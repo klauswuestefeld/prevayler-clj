@@ -1,6 +1,6 @@
 ## Inconsistent State Detected
 
-From version 5 onwards, Prevayler saves, along with each event in the journal, the [Clojure hash](https://clojuredocs.org/clojure.core/hash) of the state produced by that event, so that state consistency can be checked at every event when the journal is replayed.
+From version 5 onwards, Prevayler saves, along with each event in the journal, the [Clojure hash](https://clojuredocs.org/clojure.core/hash) of the state produced by that event to check state consistency during journal restoration.
 
 If you are getting an `Inconsistent State Detected` exception when starting your system and replaying your journal, that means the state produced by an event is not the same as the first time that event was handled. This could [unravel](https://en.wikipedia.org/wiki/Butterfly_effect) into serious inconsistencies if not checked.
 

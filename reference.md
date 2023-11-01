@@ -1,10 +1,11 @@
 ## Inconsistent State Detected
 
-From version 5 onwards, Prevayler saves, along with each event in the journal, the [Clojure hash](https://clojuredocs.org/clojure.core/hash) of the state produced by that event, so that state consistency can be checked when the journal is replayed.
+From version 5 onwards, Prevayler saves, along with each event in the journal, the [Clojure hash](https://clojuredocs.org/clojure.core/hash) of the state produced by that event, so that state consistency can be checked at every event when the journal is replayed.
 
 If you are getting an `Inconsistent State Detected` exception when starting your system and replaying your journal, that means the state produced by an event is not the same as the first time that event was handled. This could [unravel](https://en.wikipedia.org/wiki/Butterfly_effect) into serious inconsistencies if not checked.
 
 Possible reasons for the error:
+
  1. Your `business-fn` is not a pure, referentially transparent function, as it should be. It might be running [non-deterministic code](https://stackoverflow.com/questions/17626262/java-not-deterministic).
     - Impact: You might have lost information you can't recover.
     - Workaround: Recover whatever you can by [reading the journal file](https://github.com/klauswuestefeld/prevayler-clj#files) directly. The events are there. You might want to handle them with a modified version of your `business-fn` to recover the most you can.

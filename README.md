@@ -11,7 +11,7 @@ See what's [new in Prevayler4](CHANGELOG.md).
 ## Usage
 
 - Get enough RAM to hold all your data.
-- Implement the business logic of your system as a [PURE](https://en.wikipedia.org/wiki/Pure_function) event handling function. Keep any I/O logic (accessing some web service, for example) separate.
+- Implement the business logic of your system as a [PURE](https://en.wikipedia.org/wiki/Deterministic_algorithm) event handling function. Keep any I/O logic (accessing some web service, for example) separate.
 - Guarantee persistence by applying all events to your business system through Prevayler, like this:
 
 ```clojure

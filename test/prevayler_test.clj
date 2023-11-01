@@ -1,6 +1,6 @@
 (ns prevayler-test
   (:require
-    [prevayler-clj.prevayler4 :refer [prevayler! handle! timestamp]]
+    [prevayler-clj.prevayler5 :refer [prevayler! handle! timestamp]]
     [midje.sweet :refer [facts fact => throws]])
   (:import
     [java.io File]))
@@ -39,10 +39,11 @@
        
   (let [counter (counter t0)
         journal (tmp-file)
-        prev! #(prevayler! {:initial-state initial-state
-                            :business-fn contact-list
-                            :timestamp-fn counter ; Timestamps must be controlled while testing.
-                            :journal-file journal})]
+        options {:initial-state initial-state
+                 :business-fn contact-list
+                 :timestamp-fn counter ; Timestamps must be controlled while testing.
+                 :journal-file journal}
+        prev! #(prevayler! options)]
         
     (fact "The timestamp is accessible."
       (with-open [p (prev!)]
@@ -81,6 +82,12 @@
     (fact "Restart after some crash during event handle recovers last state"
       (with-open [p (prev!)]
         @p => {:contacts ["Ann" "Bob" "Cid"]
-               :last-timestamp 1598800000005}))))
+               :last-timestamp 1598800000005}))
+    
+    (fact "Restart with inconsistent business-fn throws exception"
+          (with-open [p (prev!)]
+            (handle! p "Dan"))
+          (with-out-str
+            (prevayler! (assoc options :business-fn (constantly "rubbish"))) => (throws IllegalStateException)))))
 
 ; (do (require 'midje.repl) (midje.repl/autotest))

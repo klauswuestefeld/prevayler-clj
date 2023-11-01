@@ -1,4 +1,4 @@
-[![Clojars Project](http://clojars.org/prevayler-clj/prevayler4/latest-version.svg)](http://clojars.org/prevayler-clj/prevayler4)
+[![Clojars Project](http://clojars.org/prevayler-clj/prevayler5/latest-version.svg)](http://clojars.org/prevayler-clj/prevayler5)
 
 ## Feature
 
@@ -6,7 +6,7 @@ Write your business logic as a pure event-handling Clojure function, without any
 
 Prevayler takes care of persistence.
 
-See what's [new in Prevayler4](CHANGELOG.md).
+See what's [new in Prevayler4 and Prevayler5](CHANGELOG.md).
 
 ## Usage
 

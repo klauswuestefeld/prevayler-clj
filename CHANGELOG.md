@@ -1,3 +1,7 @@
+## prevayler-clj/prevayler5
+- Prevayler 5 is still compatible with journal4 files.
+- State consistency is checked after every event during journal restoration. [Learn more](https://github.com/klauswuestefeld/prevayler-clj/blob/master/reference.md#inconsistent-state-detected).
+
 ## prevayler-clj/prevayler4
 
 - Timestamps: Events are now timestamped with a `timestamp-fn` that you can pass in when creating Prevayler. It defaults to System/currentTimeMillis. Timestamps are now passed as the third argument to the business function.

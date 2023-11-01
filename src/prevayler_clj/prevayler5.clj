@@ -1,4 +1,4 @@
-(ns prevayler-clj.prevayler4
+(ns prevayler-clj.prevayler5
   (:require
     [taoensso.nippy :as nippy])
   (:import
@@ -17,23 +17,31 @@
         (rename! file backup)
         backup))))
 
+(defn- read-value! [data-in]
+  (try
+    (nippy/thaw-from-in! data-in)
+    (catch EOFException eof
+      (throw eof))
+    (catch Exception corruption
+      (println "Warning - Exception thrown while reading journal (this is normally OK and can happen when the process is killed during write):" corruption)
+      (throw (EOFException.)))))
+
 (defn- try-to-restore! [handler state-atom data-in]
-  (let [read-value! #(nippy/thaw-from-in! data-in)]
-    (let [previous-state (read-value!)] ; Can throw EOFException
-      (reset! state-atom previous-state))
-    (while true ;Ends with EOFException
-      (let [[timestamp event] (read-value!)]
-        (try
-          (swap! state-atom handler event timestamp)
-          (catch Exception e (.printStackTrace e)))))))
+  (let [previous-state (read-value! data-in)] ; Can throw EOFException
+    (reset! state-atom previous-state))
+  (while true ;Ends with EOFException
+    (let [[timestamp event expected-state-hash] (read-value! data-in)
+          state (swap! state-atom handler event timestamp)]
+      (when (and expected-state-hash ; Old prevayler4 journals don't have this state hash saved (2023-11-01)
+                 (not= (hash state) expected-state-hash))
+        (println "Inconsistent state detected after restoring event:\n" event)
+        (throw (IllegalStateException. "Inconsistent state detected during event journal replay. https://github.com/klauswuestefeld/prevayler-clj/blob/master/reference.md#inconsistent-state-detected"))))))
 
 (defn- restore! [handler state-atom ^File file]
   (with-open [data-in (-> file FileInputStream. DataInputStream.)]
     (try
       (try-to-restore! handler state-atom data-in)
-      (catch EOFException _done)
-      (catch Exception corruption
-        (println "Warning - Exception thrown while reading journal (this is normally OK and can happen when the process is killed during write):" corruption)))))
+      (catch EOFException _done))))
 
 (defn- write-with-flush! [data-out value]
   (nippy/freeze-to-out! data-out value)
@@ -67,7 +75,7 @@
           (locking this ; (I)solation: strict serializability.
             (let [timestamp (timestamp-fn)
                   new-state (business-fn @state-atom event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.)
-              (write-with-flush! data-out [timestamp event]) ; (D)urability
+              (write-with-flush! data-out [timestamp event (hash new-state)]) ; (D)urability
               (reset! state-atom new-state)))) ; (A)tomicity
         (timestamp [_] (timestamp-fn))
 

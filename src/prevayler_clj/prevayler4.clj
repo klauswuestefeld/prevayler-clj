@@ -65,10 +65,12 @@
         Prevayler
         (handle! [this event]
           (locking this ; (I)solation: strict serializability.
-            (let [timestamp (timestamp-fn)
-                  new-state (business-fn @state-atom event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.)
-              (write-with-flush! data-out [timestamp event]) ; (D)urability
-              (reset! state-atom new-state)))) ; (A)tomicity
+            (let [current-state @state-atom
+                  timestamp (timestamp-fn)
+                  new-state (business-fn current-state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
+              (when-not (identical? new-state current-state)
+                (write-with-flush! data-out [timestamp event]) ; (D)urability
+                (reset! state-atom new-state))))) ; (A)tomicity
         (timestamp [_] (timestamp-fn))
 
         IDeref (deref [_] @state-atom)

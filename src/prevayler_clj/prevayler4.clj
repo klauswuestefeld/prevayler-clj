@@ -70,7 +70,8 @@
                   new-state (business-fn current-state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
               (when-not (identical? new-state current-state)
                 (write-with-flush! data-out [timestamp event]) ; (D)urability
-                (reset! state-atom new-state))))) ; (A)tomicity
+                (reset! state-atom new-state)) ; (A)tomicity
+              new-state)))
         (timestamp [_] (timestamp-fn))
 
         IDeref (deref [_] @state-atom)

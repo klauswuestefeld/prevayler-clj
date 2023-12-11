@@ -95,6 +95,7 @@
           (with-open [p (prev!)]
             (handle! p "Dan"))
           (with-out-str
-            (prevayler! (assoc options :business-fn (constantly "rubbish"))) => (throws IllegalStateException)))))
+            (prevayler! (assoc options :business-fn (constantly "rubbish")))
+              => (throws IllegalStateException)))))
 
 ; (do (require 'midje.repl) (midje.repl/autotest))

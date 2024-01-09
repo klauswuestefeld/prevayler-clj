@@ -2,7 +2,7 @@
   (:require
     [taoensso.nippy :as nippy])
   (:import
-   [java.io File FileOutputStream FileInputStream DataInputStream DataOutputStream EOFException Closeable]
+   [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
    [clojure.lang IDeref]))
 
 (defn- rename! [file new-file]
@@ -38,7 +38,7 @@
         (throw (IllegalStateException. "Inconsistent state detected during event journal replay. https://github.com/klauswuestefeld/prevayler-clj/blob/master/reference.md#inconsistent-state-detected"))))))
 
 (defn- restore! [handler state-atom ^File file]
-  (with-open [data-in (-> file FileInputStream. DataInputStream.)]
+  (with-open [data-in (-> file FileInputStream. BufferedInputStream. DataInputStream.)]
     (try
       (try-to-restore! handler state-atom data-in)
       (catch EOFException _done))))
@@ -64,7 +64,7 @@
     (when backup
       (restore! business-fn state-atom backup))
 
-    (let [data-out (-> journal-file FileOutputStream. DataOutputStream.)]
+    (let [data-out (-> journal-file FileOutputStream. BufferedOutputStream. DataOutputStream.)]
       (write-with-flush! data-out @state-atom)
       (when backup
         (archive! backup))

@@ -50,8 +50,15 @@
 (defn- archive! [^File backup]
   (rename! backup (File. (str backup "-" (System/currentTimeMillis)))))
 
+(defn- start-new-journal! [journal-file data-out-atom state backup-file]
+  (reset! data-out-atom (-> journal-file FileOutputStream. BufferedOutputStream. DataOutputStream.))
+  (write-with-flush! @data-out-atom state)
+  (when backup-file
+    (archive! backup-file)))
+
 (defprotocol Prevayler
   (handle! [this event] "Journals the event, applies the business function to the state and the event; and returns the new state.")
+  (snapshot! [this] "Creates a snapshot of the current state.")
   (timestamp [this] "Calls the timestamp-fn"))
 
 (defn prevayler! [{:keys [initial-state business-fn timestamp-fn journal-file]
@@ -64,10 +71,8 @@
     (when backup
       (restore! business-fn state-atom backup))
 
-    (let [data-out (-> journal-file FileOutputStream. BufferedOutputStream. DataOutputStream.)]
-      (write-with-flush! data-out @state-atom)
-      (when backup
-        (archive! backup))
+    (let [data-out-atom (atom nil)]
+      (start-new-journal! journal-file data-out-atom @state-atom backup)
 
       (reify
         Prevayler
@@ -77,11 +82,18 @@
                   timestamp (timestamp-fn)
                   new-state (business-fn current-state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
               (when-not (identical? new-state current-state)
-                (write-with-flush! data-out [timestamp event (hash new-state)]) ; (D)urability
+                (write-with-flush! @data-out-atom [timestamp event (hash new-state)]) ; (D)urability
                 (reset! state-atom new-state)) ; (A)tomicity
               new-state)))
+        
+        (snapshot! [this]
+          (locking this
+            (.close @data-out-atom)
+            (let [backup (produce-backup-file! journal-file)]
+              (start-new-journal! journal-file data-out-atom @state-atom backup))))
+        
         (timestamp [_] (timestamp-fn))
 
         IDeref (deref [_] @state-atom)
-        
-        Closeable (close [_] (.close data-out))))))
+
+        Closeable (close [_] (.close data-out-atom))))))

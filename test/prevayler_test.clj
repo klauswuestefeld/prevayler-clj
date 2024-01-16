@@ -1,6 +1,6 @@
 (ns prevayler-test
   (:require
-    [prevayler-clj.prevayler5 :refer [prevayler! handle! timestamp]]
+    [prevayler-clj.prevayler5 :refer [prevayler! handle! timestamp snapshot!]]
     [midje.sweet :refer [facts fact => throws]])
   (:import
     [java.io File]))
@@ -96,6 +96,15 @@
             (handle! p "Dan"))
           (with-out-str
             (prevayler! (assoc options :business-fn (constantly "rubbish")))
-              => (throws IllegalStateException)))))
+              => (throws IllegalStateException)))
 
-; (do (require 'midje.repl) (midje.repl/autotest))
+    (fact "snapshot! starts new journal with current state (business function is never called during start up)"
+          (with-open [p (prev!)]
+            (handle! p "Edd")
+            (snapshot! p))
+          (with-open [p (prevayler! (assoc options :business-fn (constantly "rubbish")))]
+            @p => {:contacts ["Ann" "Bob" "Cid" "Dan" "Edd"]
+                   :last-timestamp 1598800000008}))))
+
+(comment
+  (do (require 'midje.repl) (midje.repl/autotest)))

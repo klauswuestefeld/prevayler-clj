@@ -96,4 +96,4 @@
 
         IDeref (deref [_] @state-atom)
 
-        Closeable (close [_] (.close data-out-atom))))))
+        Closeable (close [_] (.close @data-out-atom))))))

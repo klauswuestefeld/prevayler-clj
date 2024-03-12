@@ -1,6 +1,6 @@
 (ns prevayler-test
   (:require
-   [prevayler-clj.prevayler5 :refer [prevayler! handle! timestamp snapshot!]]
+   [prevayler-clj.prevayler4 :refer [prevayler! handle! timestamp snapshot!]]
    [midje.sweet :refer [facts fact => throws]])
   (:import
    [java.io File]))

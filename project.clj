@@ -1,4 +1,4 @@
-(defproject prevayler-clj/prevayler4 "2024.01.11"
+(defproject prevayler-clj/prevayler4 "2024.03.18"
   :description "Simple, fast, 100% transparent, ACID persistence in Clojure."
   :url "https://github.com/klauswuestefeld/prevayler-clj"
   :license {:name "BSD"

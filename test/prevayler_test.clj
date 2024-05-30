@@ -1,7 +1,7 @@
 (ns prevayler-test
   (:require
    [prevayler-clj.prevayler4 :refer [prevayler! handle! timestamp snapshot!]]
-   [midje.sweet :refer [facts fact => throws]])
+   [clojure.test :refer [deftest is testing]])
   (:import
    [java.io File]))
 
@@ -28,83 +28,70 @@
 
 (def t0 1598800000000)  ; System/currentTimeMillis at some arbitrary moment in the past.
 
-(facts "About prevalence"
-       (with-open [p (prevayler! {:initial-state initial-state
-                                  :business-fn contact-list})]
-         (fact "The System clock is used as the default timestamp-fn"
-               (handle! p "Ann")
-               (-> @p :last-timestamp (> t0)) => true))
+(deftest prevayler!-test
+  (testing "The System clock is used as the default timestamp-fn"
+    (with-open [p (prevayler! {:initial-state initial-state
+                               :business-fn contact-list})]
+      (handle! p "Ann")
+      (is (-> @p :last-timestamp (> t0)))))
+  (testing "journal4 is the default file name and it is released after Prevayler is closed (Relevant in Windows)."
+    (is (.delete (File. "journal4"))))
 
-       (fact "journal4 is the default file name and it is released after Prevayler is closed (Relevant in Windows)."
-             (.delete (File. "journal4")) => true)
-
-       (let [counter (counter t0)
-             journal (tmp-file)
-             options {:initial-state initial-state
-                      :business-fn contact-list
-                      :timestamp-fn counter ; Timestamps must be controlled while testing.
-                      :journal-file journal}
-             prev! #(prevayler! options)]
-
-         (fact "The timestamp is accessible."
-               (with-open [p (prev!)]
-                 (timestamp p) => 1598800000001))
-
-         (fact "First run uses initial state"
-               (with-open [p (prev!)]
-                 (:contacts @p) => []))
-
-         (fact "Restart after no events recovers initial state"
-               (with-open [p (prev!)]
-                 (:contacts @p) => []
-                 (handle! p "Ann") => {:contacts ["Ann"]
-                                       :last-timestamp 1598800000002}
-                 (:contacts @p) => ["Ann"]
-                 (handle! p "Bob")
-                 (:contacts @p) => ["Ann" "Bob"]))
-
-         (fact "Restart after some events recovers last state"
-               (with-open [p (prev!)]
-                 (:contacts @p) => ["Ann" "Bob"]))
-
-         (fact "Events that don't change the state are not journalled"
-               (with-open [p (prev!)]
-                 (let [previous-length (.length journal)]
-                   (:contacts (handle! p "do-nothing")) => ["Ann" "Bob"]
-                   (.length journal) => previous-length)))
-
-         (fact "Simulated crash during restart is survived"
-               (.renameTo journal (File. (str journal ".backup"))) => true
-               (spit journal "#$@%@corruption&@#$@")
-               (with-open [p (prev!)]
-                 (:contacts @p) => ["Ann" "Bob"]))
-
-         (fact "Exception during event handle doesn't affect state"
-               (with-open [p (prev!)]
-                 (handle! p "simulate-a-bug") => (throws RuntimeException)
-                 (:contacts @p) => ["Ann" "Bob"]
-                 (handle! p "Cid")
-                 (:contacts @p) => ["Ann" "Bob" "Cid"]))
-
-         (fact "Restart after some crash during event handle recovers last state"
-               (with-open [p (prev!)]
-                 @p => {:contacts ["Ann" "Bob" "Cid"]
-                        :last-timestamp 1598800000006}))
-
-         (fact "Restart with inconsistent business-fn throws exception"
-               (with-open [p (prev!)]
-                 (handle! p "Dan"))
-               (with-out-str
-                 (prevayler! (assoc options :business-fn (constantly "rubbish")))
-                 => (throws IllegalStateException)))
-
-         (fact "snapshot! starts new journal with current state (business function is never called during start up)"
-               (with-open [p (prev!)]
-                 (handle! p "Edd")
-                 (snapshot! p))
-               (with-open [p (prevayler! (assoc options :business-fn (constantly "rubbish")))]
-                 @p => {:contacts ["Ann" "Bob" "Cid" "Dan" "Edd"]
-                        :last-timestamp 1598800000008}))))
-
-(comment
-  (do (require 'midje.repl) (midje.repl/autotest)))
+  (let [counter (counter t0)
+        journal (tmp-file)
+        options {:initial-state initial-state
+                 :business-fn contact-list
+                 :timestamp-fn counter ; Timestamps must be controlled while testing.
+                 :journal-file journal}
+        prev! #(prevayler! options)]
+    (testing "The timestamp is accessible."
+      (with-open [p (prev!)]
+        (is (= 1598800000001 (timestamp p)))))
+    (testing "First run uses initial state"
+      (with-open [p (prev!)]
+        (is (= [] (:contacts @p)))))
+    (testing "Restart after no events recovers initial state"
+      (with-open [p (prev!)]
+        (is (= [] (:contacts @p)))
+        (is (= {:contacts ["Ann"] :last-timestamp 1598800000002}
+               (handle! p "Ann")))
+        (is (= ["Ann"] (:contacts @p)))
+        (handle! p "Bob")
+        (is (= ["Ann" "Bob"] (:contacts @p)))))
+    (testing "Restart after some events recovers last state"
+      (with-open [p (prev!)]
+        (is (= ["Ann" "Bob"] (:contacts @p)))))
+    (testing "Events that don't change the state are not journalled"
+      (with-open [p (prev!)]
+        (let [previous-length (.length journal)]
+          (is (= ["Ann" "Bob"] (:contacts (handle! p "do-nothing"))))
+          (is (= previous-length (.length journal))))))
+    (testing "Simulated crash during restart is survived"
+      (is (.renameTo journal (File. (str journal ".backup"))))
+      (spit journal "#$@%@corruption&@#$@")
+      (with-open [p (prev!)]
+        (is (= ["Ann" "Bob"] (:contacts @p)))))
+    (testing "Exception during event handle doesn't affect state"
+      (with-open [p (prev!)]
+        (is (thrown? RuntimeException (handle! p "simulate-a-bug")))
+        (is (= ["Ann" "Bob"] (:contacts @p)))
+        (handle! p "Cid")
+        (is (= ["Ann" "Bob" "Cid"] (:contacts @p)))))
+    (testing "Restart after some crash during event handle recovers last state"
+      (with-open [p (prev!)]
+        (is (= {:contacts ["Ann" "Bob" "Cid"]
+                :last-timestamp 1598800000006}
+               @p))))
+    (testing "Restart with inconsistent business-fn throws exception"
+      (with-open [p (prev!)]
+        (handle! p "Dan"))
+      (with-out-str
+        (is (thrown? IllegalStateException (prevayler! (assoc options :business-fn (constantly "rubbish")))))))
+    (testing "snapshot! starts new journal with current state (business function is never called during start up)"
+      (with-open [p (prev!)]
+        (handle! p "Edd")
+        (snapshot! p))
+      (with-open [p (prevayler! (assoc options :business-fn (constantly "rubbish")))]
+        (is (= {:contacts ["Ann" "Bob" "Cid" "Dan" "Edd"]
+                :last-timestamp 1598800000008}
+               @p))))))

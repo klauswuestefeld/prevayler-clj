@@ -51,10 +51,7 @@
   (rename! backup (File. (str backup "-" (System/currentTimeMillis)))))
 
 (defn- start-new-journal! [journal-file data-out-atom state backup-file]
-  (reset! data-out-atom (-> journal-file FileOutputStream. BufferedOutputStream. DataOutputStream.))
-  (write-with-flush! @data-out-atom state)
-  (when backup-file
-    (archive! backup-file)))
+  (reset! data-out-atom (-> journal-file FileOutputStream. BufferedOutputStream. DataOutputStream.)))
 
 (defprotocol Prevayler
   (handle! [this event] "Journals the event, applies the business function to the state and the event; and returns the new state.")
@@ -86,11 +83,10 @@
                 (reset! state-atom new-state)) ; (A)tomicity
               new-state)))
         
-        (snapshot! [this]
-          (locking this
-            (.close @data-out-atom)
-            (let [backup (produce-backup-file! journal-file)]
-              (start-new-journal! journal-file data-out-atom @state-atom backup))))
+        (snapshot! [_]
+          (locking ::snapshot
+            (let [{:keys [state transaction-count]} @state-atom]
+              (write-with-flush! (File. dir (format "%012d.snapshot5" transaction-count)) state))))
         
         (timestamp [_] (timestamp-fn))
 

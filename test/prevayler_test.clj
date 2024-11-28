@@ -1,6 +1,7 @@
 (ns prevayler-test
   (:require
    [prevayler-clj.prevayler5 :refer [prevayler! handle! timestamp snapshot!]]
+   [clojure.java.io :as io]
    [clojure.test :refer [deftest is testing]])
   (:import
    [java.io File]))
@@ -19,6 +20,13 @@
 
 (defn- tmp-dir []
   (.toFile (java.nio.file.Files/createTempDirectory "test-" (make-array java.nio.file.attribute.FileAttribute 0))))
+
+(defn total-file-length [dir & [suffix]]
+  (->> (file-seq (io/file dir))
+       (filter #(.isFile %))
+       (filter #(.endsWith (.getName %) (or suffix "")))
+       (map #(.length %))
+       (apply +)))
 
 (defn counter [start]
   (let [counter-atom (atom start)]
@@ -61,14 +69,13 @@
     (testing "Restart after some events recovers last state"
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob"] (:contacts @p)))))
-    #_(testing "Events that don't change the state are not journalled"
+    (testing "Events that don't change the state are not journalled"
       (with-open [p (prev!)]
-        (let [previous-length (.length journal)]
+        (let [previous-length (total-file-length prevayler-dir)]
           (is (= ["Ann" "Bob"] (:contacts (handle! p "do-nothing"))))
-          (is (= previous-length (.length journal))))))
-    #_(testing "Simulated crash during restart is survived"
-      (is (.renameTo journal (File. (str journal ".backup"))))
-      (spit journal "#$@%@corruption&@#$@")
+          (is (= previous-length (total-file-length prevayler-dir))))))
+    (testing "Simulated crash during snapshot is survived"
+      (spit (File. prevayler-dir "000000000000.snapshot5") "#$@%@corruption&@#$@")
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob"] (:contacts @p)))))
     (testing "Exception during event handle doesn't affect state"
@@ -80,18 +87,24 @@
     (testing "Restart after some crash during event handle recovers last state"
       (with-open [p (prev!)]
         (is (= {:contacts ["Ann" "Bob" "Cid"]
-                :last-timestamp 1598800000005}
+                :last-timestamp 1598800000006}
                @p))))
     (testing "Restart with inconsistent business-fn throws exception"
       (with-open [p (prev!)]
         (handle! p "Dan"))
       (with-out-str
         (is (thrown? IllegalStateException (prevayler! (assoc options :business-fn (constantly "rubbish")))))))
-    #_(testing "snapshot! starts new journal with current state (business function is never called during start up)"
+    (testing "snapshot! saves the state"
       (with-open [p (prev!)]
         (handle! p "Edd")
         (snapshot! p))
       (with-open [p (prevayler! (assoc options :business-fn (constantly "rubbish")))]
         (is (= {:contacts ["Ann" "Bob" "Cid" "Dan" "Edd"]
                 :last-timestamp 1598800000008}
-               @p))))))
+               @p))))
+    (testing "journals are unaffected by snapshot"
+      (with-open [p (prev!)]
+        (handle! p "Edd")
+        (let [previous-length (total-file-length prevayler-dir "journal5")]
+          (snapshot! p)
+          (is (= previous-length (total-file-length prevayler-dir "journal5"))))))))

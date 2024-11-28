@@ -1,6 +1,6 @@
 (ns prevayler-test
   (:require
-   [prevayler-clj.prevayler4 :refer [prevayler! handle! timestamp snapshot!]]
+   [prevayler-clj.prevayler5 :refer [prevayler! handle! timestamp snapshot!]]
    [clojure.test :refer [deftest is testing]])
   (:import
    [java.io File]))
@@ -17,13 +17,8 @@
         (update :contacts conj event)
         (assoc :last-timestamp timestamp))))
 
-(defn- tmp-file []
-  (doto
-   (File/createTempFile "test-" ".tmp")
-    (.delete)))
-
 (defn- tmp-dir []
-  (java.nio.file.Files/createTempDirectory "test-"))
+  (.toFile (java.nio.file.Files/createTempDirectory "test-" (make-array java.nio.file.attribute.FileAttribute 0))))
 
 (defn counter [start]
   (let [counter-atom (atom start)]
@@ -39,15 +34,15 @@
                                  :dir prevayler-dir})]
         (handle! p "Ann")
         (is (-> @p :last-timestamp (> t0)))))
-    (testing "journal4 is the default file name and it is released after Prevayler is closed (Relevant in Windows)."
+    (testing "journal5 is the default file name and it is released after Prevayler is closed (Relevant in Windows)."
       (is (.delete (File. prevayler-dir "000000000000.journal5")))))
 
   (let [counter (counter t0)
-        journal (tmp-file)
+        prevayler-dir (tmp-dir)
         options {:initial-state initial-state
                  :business-fn contact-list
                  :timestamp-fn counter ; Timestamps must be controlled while testing.
-                 :journal-file journal}
+                 :dir prevayler-dir}
         prev! #(prevayler! options)]
     (testing "The timestamp is accessible."
       (with-open [p (prev!)]
@@ -85,7 +80,7 @@
     (testing "Restart after some crash during event handle recovers last state"
       (with-open [p (prev!)]
         (is (= {:contacts ["Ann" "Bob" "Cid"]
-                :last-timestamp 1598800000006}
+                :last-timestamp 1598800000005}
                @p))))
     (testing "Restart with inconsistent business-fn throws exception"
       (with-open [p (prev!)]

@@ -1,4 +1,4 @@
-(ns prevayler-clj.prevayler4
+(ns prevayler-clj.prevayler5
   (:require
     [taoensso.nippy :as nippy])
   (:import
@@ -61,11 +61,11 @@
   (snapshot! [this] "Creates a snapshot of the current state.")
   (timestamp [this] "Calls the timestamp-fn"))
 
-(defn prevayler! [{:keys [initial-state business-fn timestamp-fn journal-file]
+(defn prevayler! [{:keys [initial-state business-fn timestamp-fn dir]
                    :or {initial-state {}
-                        timestamp-fn #(System/currentTimeMillis)
-                        journal-file (File. "journal4")}}]
-  (let [state-atom (atom initial-state)
+                        timestamp-fn #(System/currentTimeMillis)}}]
+  (let [journal-file (File. dir "000000000000.journal5")
+        state-atom (atom initial-state)
         backup (produce-backup-file! journal-file)]
 
     (when backup

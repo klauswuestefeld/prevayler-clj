@@ -6,6 +6,8 @@
    [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
    [clojure.lang IDeref]))
 
+(def journal-extention "journal5")
+
 (defn- rename! [file new-file]
   (when-not (.renameTo file new-file)
     (throw (RuntimeException. (str "Unable to rename " file " to " new-file)))))
@@ -27,27 +29,44 @@
       (println "Warning - Exception thrown while reading journal (this is normally OK and can happen when the process is killed during write):" corruption)
       (throw (EOFException.)))))
 
+(defn list-files [dir]
+  (->> (clojure.java.io/file dir)
+       (.listFiles)
+       (filter #(.isFile %))))
+
+(defn- journal-file? [file]
+  (.endsWith (.getName file) (str "." journal-extention)))
+
+(defn- name->transaction-count [file]
+  (Long/parseLong (re-find #"\d+" (.getName file))))
+
 ;; TODO implement
 (defn- try-to-restore! [dir handler {:keys [state transaction-count]}]
-  (while true ;Ends with EOFException
-    (let [[timestamp event expected-state-hash] (read-value! data-in)
-          state (swap! state-atom handler event timestamp)]
-      (when (and expected-state-hash ; Old prevayler4 journals don't have this state hash saved (2023-11-01)
-                 (not= (hash state) expected-state-hash))
-        (println "Inconsistent state detected after restoring event:\n" event)
-        (throw (IllegalStateException. "Inconsistent state detected during event journal replay. https://github.com/klauswuestefeld/prevayler-clj/blob/master/reference.md#inconsistent-state-detected"))))))
+  (let [journal-file (->> dir
+                          list-files
+                          (filter journal-file?)
+                          (map (juxt identity name->transaction-count))
+                          (remove #(> (second %) transaction-count))
+                          (sort-by (comp - second))
+                          ffirst)]
+    ; WIP
+    )
+  (try
+    (while true ;Ends with EOFException
+      (let [[timestamp event] (read-value! data-in)]
+        (swap! state-atom handler event timestamp)))
+    (catch EOFException _expected)))
 
 (defn last-snapshot-file [dir])
 
 (defn- restore! [dir handler initial-state]
-  (let [state-envelope (if-let [file (last-snapshot-file dir)]
+  (let [state-envelope (if-let [snapshot-file (last-snapshot-file dir)]
                          (let [state (try
-                                       (with-open [data-in (-> file FileInputStream. BufferedInputStream. DataInputStream.)]
+                                       (with-open [data-in (-> snapshot-file FileInputStream. BufferedInputStream. DataInputStream.)]
                                          (read-value! data-in))
                                        (catch Exception e
-                                         (throw (ex-info "cannot read snapshot" {:file file} e))))
-                               [_ transaction-count] (re-find #"(\d+).snapshot5" (.getName file))]
-                           {:state state :transaction-count (Long/parseLong transaction-count)})
+                                         (throw (ex-info "cannot read snapshot" {:file snapshot-file} e))))]
+                           {:state state :transaction-count (name->transaction-count snapshot-file)})
                          {:state initial-state :transaction-count 0})]
     (try-to-restore! dir handler state-envelope)))
 
@@ -82,6 +101,7 @@
                   timestamp (timestamp-fn)
                   new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
               (when-not (identical? new-state state)
+                ; TODO: Close prevayler if writing throws Exception.
                 (write-with-flush! journal-out [timestamp event (hash new-state)]) ; (D)urability
                 (reset! state-envelope-atom {:state new-state :transaction-count (inc transaction-count)})) ; (A)tomicity
               new-state)))

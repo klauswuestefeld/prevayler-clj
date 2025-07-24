@@ -6,7 +6,8 @@
    [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
    [clojure.lang IDeref]))
 
-(def journal-extention "journal5")
+(def journal-extention  "journal5")
+(def snapshot-extention "snapshot5")
 
 (defn- rename! [file new-file]
   (when-not (.renameTo file new-file)
@@ -34,41 +35,57 @@
        (.listFiles)
        (filter #(.isFile %))))
 
-(defn- journal-file? [file]
-  (.endsWith (.getName file) (str "." journal-extention)))
-
-(defn- name->transaction-count [file]
+(defn- filename-number [file]
   (Long/parseLong (re-find #"\d+" (.getName file))))
 
-;; TODO implement
-(defn- try-to-restore! [dir handler {:keys [state transaction-count]}]
-  (let [journal-file (->> dir
-                          list-files
-                          (filter journal-file?)
-                          (map (juxt identity name->transaction-count))
-                          (remove #(> (second %) transaction-count))
-                          (sort-by (comp - second))
-                          ffirst)]
-    ; WIP
-    )
-  (try
-    (while true ;Ends with EOFException
-      (let [[timestamp event] (read-value! data-in)]
-        (swap! state-atom handler event timestamp)))
-    (catch EOFException _expected)))
+(defn- sorted-files [dir extension]
+  (->> dir
+       list-files
+       (filter #(.endsWith (.getName %) (str "." extension)))
+       (sort-by filename-number)))
 
-(defn last-snapshot-file [dir])
+(defn- restore-journal-if-necessary! [initial-state-envelope
+                                      dir
+                                      handler]
+  (if-some [journal-file (->> (sorted-files dir journal-extention)
+                              (remove #(> (filename-number %) (:transaction-count initial-state-envelope)))
+                              last)]
+    (with-open [data-in (-> journal-file FileInputStream. BufferedInputStream. DataInputStream.)]
+      (loop [envelope initial-state-envelope]
+        (try
+          (let [[timestamp event] (read-value! data-in)]
+            (recur
+             WIP: Apply only events >= transaction count.
+             (-> envelope
+                 (update :state handler event timestamp)
+                 (update :transaction-count inc))))
+          (catch EOFException _expected
+            envelope))))
+    initial-state-envelope))
+
+(defn last-snapshot-file [dir]
+  (last (sorted-files dir snapshot-extention)))
+
+(defn- restore-snapshot! [snapshot-file]
+  (try
+    (with-open [data-in (-> snapshot-file FileInputStream. BufferedInputStream. DataInputStream.)]
+      (read-value! data-in))
+    (catch Exception e
+      ; TODO: "Point to readme (delete/rename corrupt snapshot)"
+      (throw (ex-info "Error reading snapshot" {:file snapshot-file} e)))))
+
+(defn- restore-snapshot-if-necessary! [initial-state-envelope dir]
+  (if-some [snapshot-file (last-snapshot-file dir)]
+
+    {:state (restore-snapshot! snapshot-file)
+     :transaction-count (filename-number snapshot-file)}
+
+    initial-state-envelope))
 
 (defn- restore! [dir handler initial-state]
-  (let [state-envelope (if-let [snapshot-file (last-snapshot-file dir)]
-                         (let [state (try
-                                       (with-open [data-in (-> snapshot-file FileInputStream. BufferedInputStream. DataInputStream.)]
-                                         (read-value! data-in))
-                                       (catch Exception e
-                                         (throw (ex-info "cannot read snapshot" {:file snapshot-file} e))))]
-                           {:state state :transaction-count (name->transaction-count snapshot-file)})
-                         {:state initial-state :transaction-count 0})]
-    (try-to-restore! dir handler state-envelope)))
+  (-> {:state initial-state, :transaction-count 0}
+      (restore-snapshot-if-necessary! dir)
+      (restore-journal-if-necessary! dir handler)))
 
 (defn- write-with-flush! [data-out value]
   (nippy/freeze-to-out! data-out value)
@@ -91,32 +108,32 @@
 (defn prevayler! [{:keys [initial-state business-fn timestamp-fn dir]
                    :or {initial-state {}
                         timestamp-fn #(System/currentTimeMillis)}}]
-  (let [state-envelope-atom (atom (restore! dir business-fn initial-state))]
-    (let [journal-out (start-new-journal! dir (:transaction-count @state-envelope-atom))]
-      (reify
-        Prevayler
-        (handle! [_ event]
-          (locking ::journal ; (I)solation: strict serializability.
-            (let [{:keys [state transaction-count]} @state-envelope-atom
-                  timestamp (timestamp-fn)
-                  new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
-              (when-not (identical? new-state state)
+  (let [state-envelope-atom (atom (restore! dir business-fn initial-state))
+        journal-out (start-new-journal! dir (:transaction-count @state-envelope-atom))]
+    (reify
+      Prevayler
+      (handle! [_ event]
+        (locking ::journal ; (I)solation: strict serializability.
+          (let [{:keys [state transaction-count]} @state-envelope-atom
+                timestamp (timestamp-fn)
+                new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
+            (when-not (identical? new-state state)
                 ; TODO: Close prevayler if writing throws Exception.
-                (write-with-flush! journal-out [timestamp event (hash new-state)]) ; (D)urability
-                (reset! state-envelope-atom {:state new-state :transaction-count (inc transaction-count)})) ; (A)tomicity
-              new-state)))
-        
-        (snapshot! [_]
-          (locking ::snapshot
-            (let [{:keys [state transaction-count]} @state-envelope-atom
-                  file-name (format "%012d.snapshot5" transaction-count)
-                  snapshot-file (io/file dir (str file-name ".part"))]
-              (with-open [out (-> snapshot-file data-output-stream)]
-                (write-with-flush! out state))
-              (.renameTo snapshot-file (io/file file-name)))))
-        
-        (timestamp [_] (timestamp-fn))
+              (write-with-flush! journal-out [timestamp event (hash new-state)]) ; (D)urability
+              (reset! state-envelope-atom {:state new-state :transaction-count (inc transaction-count)})) ; (A)tomicity
+            new-state)))
 
-        IDeref (deref [_] @state-envelope-atom)
+      (snapshot! [_]
+        (locking ::snapshot
+          (let [{:keys [state transaction-count]} @state-envelope-atom
+                file-name (format "%012d.snapshot5" transaction-count)
+                snapshot-file (io/file dir (str file-name ".part"))]
+            (with-open [out (-> snapshot-file data-output-stream)]
+              (write-with-flush! out state))
+            (.renameTo snapshot-file (io/file file-name)))))
 
-        Closeable (close [_] (.close journal-out))))))
+      (timestamp [_] (timestamp-fn))
+
+      IDeref (deref [_] @state-envelope-atom)
+
+      Closeable (close [_] (.close journal-out)))))

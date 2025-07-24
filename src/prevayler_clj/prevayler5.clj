@@ -47,21 +47,27 @@
 (defn- restore-journal-if-necessary! [initial-state-envelope
                                       dir
                                       handler]
-  (if-some [journal-file (->> (sorted-files dir journal-extention)
-                              (remove #(> (filename-number %) (:transaction-count initial-state-envelope)))
-                              last)]
-    (with-open [data-in (-> journal-file FileInputStream. BufferedInputStream. DataInputStream.)]
-      (loop [envelope initial-state-envelope]
-        (try
-          (let [[timestamp event] (read-value! data-in)]
-            (recur
-             WIP: Apply only events >= transaction count.
-             (-> envelope
-                 (update :state handler event timestamp)
-                 (update :transaction-count inc))))
-          (catch EOFException _expected
-            envelope))))
-    initial-state-envelope))
+  (let [journals (sorted-files dir journal-extention)
+        older (filter #(<= (filename-number %) (:transaction-count initial-state-envelope)) journals)
+        newer (filter #(> (filename-number %) (:transaction-count initial-state-envelope)) journals)
+        relevant-journals (cond->> newer
+                            (last older) (cons (last older)))]
+    (reduce
+     (fn [envelope journal-file]
+       (with-open [data-in (-> journal-file FileInputStream. BufferedInputStream. DataInputStream.)]
+         (loop [transaction-number (filename-number journal-file) envelope envelope]
+           (if-some [[timestamp event] (try (read-value! data-in)
+                                            (catch EOFException _expected))]
+             (recur
+              (inc transaction-number)
+              (if (= (:transaction-count envelope) transaction-number)
+                (-> envelope
+                    (update :state handler event timestamp)
+                    (update :transaction-count inc))
+                envelope))
+             envelope))))
+     initial-state-envelope
+     relevant-journals)))
 
 (defn last-snapshot-file [dir]
   (last (sorted-files dir snapshot-extention)))

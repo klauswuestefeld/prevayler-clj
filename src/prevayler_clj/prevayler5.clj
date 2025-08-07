@@ -130,7 +130,7 @@
       (snapshot! [_]
         (locking ::snapshot
           (let [{:keys [state journal-index]} (locking journal-out-atom
-                                                (let [envelope @state-envelope-atom]
+                                                (let [envelope (swap! state-envelope-atom update :journal-index inc)]
                                                   ; TODO: Close prevayler if writing throws Exception.
                                                   (reset! journal-out-atom (start-new-journal! dir (:journal-index envelope)))
                                                   envelope))

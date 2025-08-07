@@ -6,7 +6,8 @@
    [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
    [clojure.lang IDeref]))
 
-(def journal-extention  "journal5")
+(def filename-number-mask "%09d")
+(def journal-extension  "journal5")
 (def snapshot-extention "snapshot5")
 
 (defn- rename! [file new-file]
@@ -44,28 +45,25 @@
        (filter #(.endsWith (.getName %) (str "." extension)))
        (sort-by filename-number)))
 
-(defn- restore-journal-if-necessary! [initial-state-envelope
+(defn- restore-journal [envelope journal-file handler]
+  (with-open [data-in (-> journal-file FileInputStream. BufferedInputStream. DataInputStream.)]
+    (loop [envelope envelope]
+      (if-some [[timestamp event] (try (read-value! data-in)
+                                       (catch EOFException _expected))]
+        (recur
+         (update envelope :state handler event timestamp))
+        (update envelope :journal-index inc)))))
+
+(defn- restore-journals-if-necessary! [initial-state-envelope
                                       dir
                                       handler]
-  (let [journals (sorted-files dir journal-extention)
-        older (filter #(<= (filename-number %) (:transaction-count initial-state-envelope)) journals)
-        newer (filter #(> (filename-number %) (:transaction-count initial-state-envelope)) journals)
-        relevant-journals (cond->> newer
-                            (last older) (cons (last older)))]
+  (let [journals (sorted-files dir journal-extension)
+        relevant-journals (drop-while #(< (filename-number %) (:journal-index initial-state-envelope)) journals)]
     (reduce
      (fn [envelope journal-file]
-       (with-open [data-in (-> journal-file FileInputStream. BufferedInputStream. DataInputStream.)]
-         (loop [transaction-number (filename-number journal-file) envelope envelope]
-           (if-some [[timestamp event] (try (read-value! data-in)
-                                            (catch EOFException _expected))]
-             (recur
-              (inc transaction-number)
-              (if (= (:transaction-count envelope) transaction-number)
-                (-> envelope
-                    (update :state handler event timestamp)
-                    (update :transaction-count inc))
-                envelope))
-             envelope))))
+       (when-not (= (:journal-index envelope) (filename-number journal-file))
+         (throw (IllegalStateException. (str "missing journal file number: " (:journal-index envelope)))))
+       (restore-journal envelope journal-file handler))
      initial-state-envelope
      relevant-journals)))
 
@@ -84,14 +82,14 @@
   (if-some [snapshot-file (last-snapshot-file dir)]
 
     {:state (restore-snapshot! snapshot-file)
-     :transaction-count (filename-number snapshot-file)}
+     :journal-index (filename-number snapshot-file)}
 
     initial-state-envelope))
 
 (defn- restore! [dir handler initial-state]
-  (-> {:state initial-state, :transaction-count 0}
+  (-> {:state initial-state, :journal-index 0}
       (restore-snapshot-if-necessary! dir)
-      (restore-journal-if-necessary! dir handler)))
+      (restore-journals-if-necessary! dir handler)))
 
 (defn- write-with-flush! [data-out value]
   (nippy/freeze-to-out! data-out value)
@@ -100,10 +98,10 @@
 (defn- data-output-stream [file]
   (-> file FileOutputStream. BufferedOutputStream. DataOutputStream.))
 
-(defn- start-new-journal! [dir transaction-count]
-  (let [file (io/file dir (format "%012d.journal5" transaction-count))]
+(defn- start-new-journal! [dir journal-index]
+  (let [file (io/file dir (format (str filename-number-mask ".journal5") journal-index))]
     (when (.exists file)
-      (.renameTo file (io/file (str file ".backup-" (System/currentTimeMillis)))))
+      (throw (IllegalStateException. (str "journal file already exists, index: " journal-index))))
     (-> file data-output-stream)))
 
 (defprotocol Prevayler
@@ -115,24 +113,28 @@
                    :or {initial-state {}
                         timestamp-fn #(System/currentTimeMillis)}}]
   (let [state-envelope-atom (atom (restore! dir business-fn initial-state))
-        journal-out (start-new-journal! dir (:transaction-count @state-envelope-atom))]
+        journal-out-atom (atom (start-new-journal! dir (:journal-index @state-envelope-atom)))]
     (reify
       Prevayler
       (handle! [_ event]
-        (locking ::journal ; (I)solation: strict serializability.
-          (let [{:keys [state transaction-count]} @state-envelope-atom
+        (locking journal-out-atom ; (I)solation: strict serializability.
+          (let [{:keys [state]} @state-envelope-atom
                 timestamp (timestamp-fn)
                 new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
             (when-not (identical? new-state state)
                 ; TODO: Close prevayler if writing throws Exception.
-              (write-with-flush! journal-out [timestamp event (hash new-state)]) ; (D)urability
-              (reset! state-envelope-atom {:state new-state :transaction-count (inc transaction-count)})) ; (A)tomicity
+              (write-with-flush! @journal-out-atom [timestamp event (hash new-state)]) ; (D)urability
+              (swap! state-envelope-atom assoc :state new-state)) ; (A)tomicity
             new-state)))
 
       (snapshot! [_]
         (locking ::snapshot
-          (let [{:keys [state transaction-count]} @state-envelope-atom
-                file-name (format "%012d.snapshot5" transaction-count)
+          (let [{:keys [state journal-index]} (locking journal-out-atom
+                                                (let [envelope @state-envelope-atom]
+                                                  ; TODO: Close prevayler if writing throws Exception.
+                                                  (reset! journal-out-atom (start-new-journal! dir (:journal-index envelope)))
+                                                  envelope))
+                file-name (format (str filename-number-mask ".snapshot5") journal-index)
                 snapshot-file (io/file dir (str file-name ".part"))]
             (with-open [out (-> snapshot-file data-output-stream)]
               (write-with-flush! out state))
@@ -140,6 +142,6 @@
 
       (timestamp [_] (timestamp-fn))
 
-      IDeref (deref [_] @state-envelope-atom)
+      IDeref (deref [_] (:state @state-envelope-atom))
 
-      Closeable (close [_] (.close journal-out)))))
+      Closeable (close [_] (.close @journal-out-atom)))))

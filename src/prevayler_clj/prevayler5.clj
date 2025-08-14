@@ -123,7 +123,7 @@
                 new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
             (when-not (identical? new-state state)
                 ; TODO: Close prevayler if writing throws Exception.
-              (write-with-flush! @journal-out-atom [timestamp event (hash new-state)]) ; (D)urability
+              (write-with-flush! @journal-out-atom [timestamp event]) ; (D)urability
               (swap! state-envelope-atom assoc :state new-state)) ; (A)tomicity
             new-state)))
 
@@ -131,14 +131,15 @@
         (locking ::snapshot
           (let [{:keys [state journal-index]} (locking journal-out-atom
                                                 (let [envelope (swap! state-envelope-atom update :journal-index inc)]
+                                                  (.close @journal-out-atom)
                                                   ; TODO: Close prevayler if writing throws Exception.
                                                   (reset! journal-out-atom (start-new-journal! dir (:journal-index envelope)))
                                                   envelope))
                 file-name (format (str filename-number-mask ".snapshot5") journal-index)
                 snapshot-file (io/file dir (str file-name ".part"))]
-            (with-open [out (-> snapshot-file data-output-stream)]
+            (with-open [out (data-output-stream snapshot-file)]
               (write-with-flush! out state))
-            (.renameTo snapshot-file (io/file file-name)))))
+            (.renameTo snapshot-file (io/file dir file-name)))))
 
       (timestamp [_] (timestamp-fn))
 

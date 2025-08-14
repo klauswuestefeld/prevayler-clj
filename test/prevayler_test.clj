@@ -22,12 +22,18 @@
 (defn- tmp-dir []
   (.toFile (java.nio.file.Files/createTempDirectory "test-" (make-array java.nio.file.attribute.FileAttribute 0))))
 
+(defn- check-positive [msg n]
+  (when-not (pos? n)
+    (throw (IllegalStateException. msg)))
+  n)
+
 (defn total-file-length [dir & [suffix]]
   (->> (file-seq (io/file dir))
        (filter #(.isFile %))
        (filter #(.endsWith (.getName %) (or suffix "")))
        (map #(.length %))
-       (apply +)))
+       (apply +)
+       (check-positive "Total file length should be positive.")))
 
 (defn counter [start]
   (let [counter-atom (atom start)]
@@ -75,6 +81,7 @@
         (let [previous-length (total-file-length prevayler-dir)]
           (is (= ["Ann" "Bob"] (:contacts (handle! p "do-nothing"))))
           (is (= previous-length (total-file-length prevayler-dir))))))
+    (println "\n\n\n\nTODO\n\n\n\n")
     #_(testing "Simulated crash during snapshot is survived"
         (spit (File. prevayler-dir "000000000000.snapshot5") "#$@%@corruption&@#$@")
         (with-open [p (prev!)]
@@ -90,23 +97,21 @@
         (is (= {:contacts ["Ann" "Bob" "Cid"]
                 :last-timestamp 1598800000006}
                @p))))
-    (testing "exception in replay "
-      (with-open [p (prev!)]
-        (handle! p "Dan")) ;; this transaction is not necessary for this test
+    (testing "exception during replay"
       (with-out-str
         (is (thrown? IllegalStateException (prevayler! (assoc options :business-fn (fn [_ _ _] (throw (IllegalStateException. "test")))))))))
     (testing "snapshot! saves the state"
-        (with-open [p (prev!)]
-          (handle! p "Edd")
-          (snapshot! p))
-        ;; TODO fix test
-        (with-open [p (prevayler! (assoc options :business-fn (constantly "rubbish")))]
-          (is (= {:contacts ["Ann" "Bob" "Cid" "Dan" "Edd"]
-                  :last-timestamp 1598800000008}
-                 @p))))
+      (with-open [p (prev!)]
+        (handle! p "Dan")
+        (snapshot! p))
+      (with-open [p (prevayler! (assoc options :business-fn (fn [_ _ _]
+                                                              (throw (IllegalStateException. "Should not happen")))))]
+        (is (= {:contacts ["Ann" "Bob" "Cid" "Dan"]
+                :last-timestamp 1598800000007}
+               @p))))
     (testing "journals are unaffected by snapshot"
-        (with-open [p (prev!)]
-          (handle! p "Edd")
-          (let [previous-length (total-file-length prevayler-dir "journal5")]
-            (snapshot! p)
-            (is (= previous-length (total-file-length prevayler-dir "journal5"))))))))
+      (with-open [p (prev!)]
+        (handle! p "Edd")
+        (let [previous-length (total-file-length prevayler-dir "journal5")]
+          (snapshot! p)
+          (is (= previous-length (total-file-length prevayler-dir "journal5"))))))))

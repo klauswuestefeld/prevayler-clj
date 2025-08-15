@@ -59,12 +59,15 @@
                  :timestamp-fn counter ; Timestamps must be controlled while testing.
                  :dir prevayler-dir}
         prev! #(prevayler! options)]
+
     (testing "The timestamp is accessible."
       (with-open [p (prev!)]
         (is (= 1598800000001 (timestamp p)))))
+
     (testing "First run uses initial state"
       (with-open [p (prev!)]
         (is (= [] (:contacts @p)))))
+
     (testing "Restart after no events recovers initial state"
       (with-open [p (prev!)]
         (is (= [] (:contacts @p)))
@@ -73,33 +76,34 @@
         (is (= ["Ann"] (:contacts @p)))
         (handle! p "Bob")
         (is (= ["Ann" "Bob"] (:contacts @p)))))
+
     (testing "Restart after some events recovers last state"
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob"] (:contacts @p)))))
+
     (testing "Events that don't change the state are not journalled"
       (with-open [p (prev!)]
         (let [previous-length (total-file-length prevayler-dir)]
           (is (= ["Ann" "Bob"] (:contacts (handle! p "do-nothing"))))
           (is (= previous-length (total-file-length prevayler-dir))))))
-    (println "\n\n\n\nTODO\n\n\n\n")
-    #_(testing "Simulated crash during snapshot is survived"
-        (spit (File. prevayler-dir "000000000000.snapshot5") "#$@%@corruption&@#$@")
-        (with-open [p (prev!)]
-          (is (= ["Ann" "Bob"] (:contacts @p)))))
+
     (testing "Exception during event handle doesn't affect state"
       (with-open [p (prev!)]
         (is (thrown? RuntimeException (handle! p "simulate-a-bug")))
         (is (= ["Ann" "Bob"] (:contacts @p)))
         (handle! p "Cid")
         (is (= ["Ann" "Bob" "Cid"] (:contacts @p)))))
+
     (testing "Restart after some crash during event handle recovers last state"
       (with-open [p (prev!)]
         (is (= {:contacts ["Ann" "Bob" "Cid"]
                 :last-timestamp 1598800000006}
                @p))))
+
     (testing "exception during replay"
       (with-out-str
         (is (thrown? IllegalStateException (prevayler! (assoc options :business-fn (fn [_ _ _] (throw (IllegalStateException. "test")))))))))
+
     (testing "snapshot! saves the state"
       (with-open [p (prev!)]
         (handle! p "Dan")
@@ -109,9 +113,28 @@
         (is (= {:contacts ["Ann" "Bob" "Cid" "Dan"]
                 :last-timestamp 1598800000007}
                @p))))
+
     (testing "journals are unaffected by snapshot"
       (with-open [p (prev!)]
         (handle! p "Edd")
         (let [previous-length (total-file-length prevayler-dir "journal5")]
           (snapshot! p)
-          (is (= previous-length (total-file-length prevayler-dir "journal5"))))))))
+          (is (= previous-length (total-file-length prevayler-dir "journal5"))))))
+
+    (prn prevayler-dir)
+    (testing "Simulated crash during snapshot is survived"
+      (let [snapshot-file (File. prevayler-dir "000000011.snapshot5")]
+        (is (.exists snapshot-file))
+        (spit snapshot-file "#$@%@corruption&@#$@")
+        (is (.exists snapshot-file))
+        (prn "    BEFORE")
+        (with-out-str
+          (is (thrown? clojure.lang.ExceptionInfo (prev!))))
+        (prn "    AFTER")
+
+        (is (.exists snapshot-file))
+
+
+;        (.delete snapshot-file))
+        (with-open [p (prev!)]
+          (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))

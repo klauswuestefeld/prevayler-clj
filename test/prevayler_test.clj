@@ -11,7 +11,6 @@
 (defn- contact-list
   "Our contact list system function."
   [state event timestamp]
-  (prn state)
   (case event
     "do-nothing" state
     "simulate-a-bug" (throw (RuntimeException.))
@@ -124,7 +123,8 @@
     (testing "Simulated crash during snapshot is survived"
       (let [snapshot-file (File. prevayler-dir "000000011.snapshot5")]
         (spit snapshot-file "...corruption...")
-        (is (thrown? clojure.lang.ExceptionInfo (prev!)))
+        (with-out-str
+          (is (thrown? clojure.lang.ExceptionInfo (prev!))))
         (.delete snapshot-file))
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))

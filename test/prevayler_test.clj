@@ -121,20 +121,10 @@
           (snapshot! p)
           (is (= previous-length (total-file-length prevayler-dir "journal5"))))))
 
-    (prn prevayler-dir)
     (testing "Simulated crash during snapshot is survived"
       (let [snapshot-file (File. prevayler-dir "000000011.snapshot5")]
-        (prn "EXISTS:" (.exists snapshot-file))
-        ;(spit snapshot-file "#$@%@corruption&@#$@")
-        (is (.exists snapshot-file))
-        (prn "    BEFORE")
+        (spit snapshot-file "...corruption...")
         (is (thrown? clojure.lang.ExceptionInfo (prev!)))
-        (prn "    AFTER")
-
-        (is (.exists snapshot-file))
-
-
-;        (.delete snapshot-file)
-        )
+        (.delete snapshot-file))
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))

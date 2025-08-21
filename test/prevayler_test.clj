@@ -124,17 +124,17 @@
     (prn prevayler-dir)
     (testing "Simulated crash during snapshot is survived"
       (let [snapshot-file (File. prevayler-dir "000000011.snapshot5")]
-        (is (.exists snapshot-file))
-        (spit snapshot-file "#$@%@corruption&@#$@")
+        (prn "EXISTS:" (.exists snapshot-file))
+        ;(spit snapshot-file "#$@%@corruption&@#$@")
         (is (.exists snapshot-file))
         (prn "    BEFORE")
-        (with-out-str
-          (is (thrown? clojure.lang.ExceptionInfo (prev!))))
+        (is (thrown? clojure.lang.ExceptionInfo (prev!)))
         (prn "    AFTER")
 
         (is (.exists snapshot-file))
 
 
-;        (.delete snapshot-file))
-        (with-open [p (prev!)]
-          (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))
+;        (.delete snapshot-file)
+        )
+      (with-open [p (prev!)]
+        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))

@@ -6,6 +6,14 @@
    [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
    [clojure.lang IDeref]))
 
+(defn tap [v msg]
+  (prn msg v)
+  v)
+(defn tap>> [fmap msg v]
+  (prn msg (fmap v))
+  v)
+
+
 (def filename-number-mask "%09d")
 (def journal-extension  "journal5")
 (def snapshot-extention "snapshot5")
@@ -43,7 +51,10 @@
   (->> dir
        list-files
        (filter #(.endsWith (.getName %) (str "." extension)))
-       (sort-by filename-number)))
+       (sort-by filename-number)
+       (tap>> (fn [files]
+                (map #(.getName %) files))
+              "Sorted files:")))
 
 (defn- restore-journal [envelope journal-file handler]
   (with-open [data-in (-> journal-file FileInputStream. BufferedInputStream. DataInputStream.)]
@@ -68,13 +79,18 @@
      relevant-journals)))
 
 (defn last-snapshot-file [dir]
-  (last (sorted-files dir snapshot-extention)))
+  (tap
+   (last (sorted-files dir snapshot-extention))
+   "Last snaphot:"))
 
 (defn- restore-snapshot! [snapshot-file]
+  (prn "RESTORING" snapshot-file)
   (try
     (with-open [data-in (-> snapshot-file FileInputStream. BufferedInputStream. DataInputStream.)]
-      (read-value! data-in))
+      (tap (read-value! data-in)
+           "READ VALUE:"))
     (catch Exception e
+      (prn "EXCEPTION")
       ; TODO: "Point to readme (delete/rename corrupt snapshot)"
       (throw (ex-info "Error reading snapshot" {:file snapshot-file} e)))))
 

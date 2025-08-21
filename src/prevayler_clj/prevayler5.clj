@@ -3,16 +3,8 @@
    [clojure.java.io :as io]
    [taoensso.nippy :as nippy])
   (:import
-   [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
+   [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException FileInputStream FileOutputStream]
    [clojure.lang IDeref]))
-
-(defn tap [v msg]
-  (prn msg v)
-  v)
-(defn tap>> [fmap msg v]
-  (prn msg (fmap v))
-  v)
-
 
 (def filename-number-mask "%09d")
 (def journal-extension  "journal5")
@@ -21,14 +13,6 @@
 (defn- rename! [file new-file]
   (when-not (.renameTo file new-file)
     (throw (RuntimeException. (str "Unable to rename " file " to " new-file)))))
-
-(defn- produce-backup-file! [file]
-  (let [backup (File. (str file ".backup"))]
-    (if (.exists backup)
-      backup
-      (when (.exists file)
-        (rename! file backup)
-        backup))))
 
 (defn- read-value! [data-in]
   (try
@@ -51,10 +35,7 @@
   (->> dir
        list-files
        (filter #(.endsWith (.getName %) (str "." extension)))
-       (sort-by filename-number)
-       (tap>> (fn [files]
-                (map #(.getName %) files))
-              "Sorted files:")))
+       (sort-by filename-number)))
 
 (defn- restore-journal [envelope journal-file handler]
   (with-open [data-in (-> journal-file FileInputStream. BufferedInputStream. DataInputStream.)]
@@ -66,8 +47,8 @@
         (update envelope :journal-index inc)))))
 
 (defn- restore-journals-if-necessary! [initial-state-envelope
-                                      dir
-                                      handler]
+                                       dir
+                                       handler]
   (let [journals (sorted-files dir journal-extension)
         relevant-journals (drop-while #(< (filename-number %) (:journal-index initial-state-envelope)) journals)]
     (reduce
@@ -79,18 +60,13 @@
      relevant-journals)))
 
 (defn last-snapshot-file [dir]
-  (tap
-   (last (sorted-files dir snapshot-extention))
-   "Last snaphot:"))
+  (last (sorted-files dir snapshot-extention)))
 
 (defn- restore-snapshot! [snapshot-file]
-  (prn "RESTORING" snapshot-file)
   (try
     (with-open [data-in (-> snapshot-file FileInputStream. BufferedInputStream. DataInputStream.)]
-      (tap (read-value! data-in)
-           "READ VALUE:"))
+      (read-value! data-in))
     (catch Exception e
-      (prn "EXCEPTION")
       ; TODO: "Point to readme (delete/rename corrupt snapshot)"
       (throw (ex-info "Error reading snapshot" {:file snapshot-file} e)))))
 
@@ -129,7 +105,8 @@
                    :or {initial-state {}
                         timestamp-fn #(System/currentTimeMillis)}}]
   (let [state-envelope-atom (atom (restore! dir business-fn initial-state))
-        journal-out-atom (atom (start-new-journal! dir (:journal-index @state-envelope-atom)))]
+        journal-out-atom (atom (start-new-journal! dir (:journal-index @state-envelope-atom)))
+        snapshot-monitor (Object.)]
     (reify
       Prevayler
       (handle! [_ event]
@@ -144,7 +121,7 @@
             new-state)))
 
       (snapshot! [_]
-        (locking ::snapshot
+        (locking snapshot-monitor
           (let [{:keys [state journal-index]} (locking journal-out-atom
                                                 (let [envelope (swap! state-envelope-atom update :journal-index inc)]
                                                   (.close @journal-out-atom)
@@ -155,7 +132,7 @@
                 snapshot-file (io/file dir (str file-name ".part"))]
             (with-open [out (data-output-stream snapshot-file)]
               (write-with-flush! out state))
-            (.renameTo snapshot-file (io/file dir file-name)))))
+            (rename! snapshot-file (io/file dir file-name)))))
 
       (timestamp [_] (timestamp-fn))
 

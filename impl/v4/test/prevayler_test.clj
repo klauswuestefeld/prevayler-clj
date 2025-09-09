@@ -1,6 +1,7 @@
 (ns prevayler-test
   (:require
-   [prevayler-clj.prevayler4 :refer [prevayler! handle! timestamp snapshot!]]
+   [house.jux--.prevayler-- :refer [handle! timestamp snapshot!]]
+   [house.jux--.prevayler-impl4-- :refer [prevayler!]]
    [clojure.test :refer [deftest is testing]])
   (:import
    [java.io File]))

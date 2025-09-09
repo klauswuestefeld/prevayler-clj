@@ -1,6 +1,7 @@
-(ns prevayler-clj.prevayler4
+(ns house.jux--.prevayler-impl4--
   (:require
-    [taoensso.nippy :as nippy])
+   [house.jux--.prevayler-- :as api]
+   [taoensso.nippy :as nippy])
   (:import
    [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
    [clojure.lang IDeref]))
@@ -56,11 +57,6 @@
   (when backup-file
     (archive! backup-file)))
 
-(defprotocol Prevayler
-  (handle! [this event] "Journals the event, applies the business function to the state and the event; and returns the new state.")
-  (snapshot! [this] "Creates a snapshot of the current state.")
-  (timestamp [this] "Calls the timestamp-fn"))
-
 (defn prevayler! [{:keys [initial-state business-fn timestamp-fn journal-file]
                    :or {initial-state {}
                         timestamp-fn #(System/currentTimeMillis)
@@ -75,7 +71,7 @@
       (start-new-journal! journal-file data-out-atom @state-atom backup)
 
       (reify
-        Prevayler
+        api/Prevayler
         (handle! [this event]
           (locking this ; (I)solation: strict serializability.
             (let [current-state @state-atom

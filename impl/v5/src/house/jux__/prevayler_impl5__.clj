@@ -1,6 +1,7 @@
-(ns prevayler-clj.prevayler5
+(ns house.jux--.prevayler-impl5--
   (:require
    [clojure.java.io :as io]
+   [house.jux--.prevayler-- :as api]
    [taoensso.nippy :as nippy])
   (:import
    [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
@@ -102,11 +103,6 @@
       (throw (IllegalStateException. (str "journal file already exists, index: " journal-index))))
     (-> file data-output-stream)))
 
-(defprotocol Prevayler
-  (handle! [this event] "Journals the event, applies the business function to the state and the event; and returns the new state.")
-  (snapshot! [this] "Creates a snapshot of the current state.")
-  (timestamp [this] "Calls the timestamp-fn"))
-
 (defn prevayler! [{:keys [initial-state business-fn timestamp-fn dir]
                    :or {initial-state {}
                         timestamp-fn #(System/currentTimeMillis)}}]
@@ -114,7 +110,7 @@
         journal-out-atom (atom (start-new-journal! dir (:journal-index @state-envelope-atom)))
         snapshot-monitor (Object.)]
     (reify
-      Prevayler
+      api/Prevayler
 
       (handle! [this event]
         (locking journal-out-atom ; (I)solation: strict serializability.

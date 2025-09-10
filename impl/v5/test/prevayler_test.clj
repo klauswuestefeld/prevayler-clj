@@ -1,6 +1,7 @@
 (ns prevayler-test
   (:require
-   [prevayler-clj.prevayler5 :refer [prevayler! handle! timestamp snapshot!]]
+   [house.jux--.prevayler-- :refer [handle! timestamp snapshot!]]
+   [house.jux--.prevayler-impl5-- :refer [prevayler!]]
    [clojure.java.io :as io]
    [clojure.test :refer [deftest is testing]])
   (:import
@@ -34,7 +35,7 @@
        (apply +)
        (check-positive "Total file length should be positive.")))
 
-(defn counter [start]
+(defn counter [start]  ; Deterministic timestamps.
   (let [counter-atom (atom start)]
     #(swap! counter-atom inc)))
 
@@ -51,11 +52,10 @@
     (testing "journal5 is the default file name and it is released after Prevayler is closed (Relevant in Windows)."
       (is (.delete (File. prevayler-dir "000000000.journal5")))))
 
-  (let [counter (counter t0)
-        prevayler-dir (tmp-dir)
+  (let [prevayler-dir (tmp-dir)
         options {:initial-state initial-state
                  :business-fn contact-list
-                 :timestamp-fn counter ; Timestamps must be controlled while testing.
+                 :timestamp-fn (counter t0)
                  :dir prevayler-dir}
         prev! #(prevayler! options)]
 

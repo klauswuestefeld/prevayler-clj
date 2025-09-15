@@ -1,7 +1,8 @@
 (ns prevayler-test
   (:require
    [house.jux--.prevayler-- :refer [handle! timestamp snapshot!]]
-   [house.jux--.prevayler-impl5-- :refer [prevayler!]]
+   [house.jux--.prevayler-impl5-- :refer [prevayler! delete-old-snapshots!]]
+   [house.jux--.prevayler-impl5--.util :refer [sorted-files]]
    [clojure.java.io :as io]
    [clojure.test :refer [deftest is testing]])
   (:import
@@ -39,7 +40,11 @@
   (let [counter-atom (atom start)]
     #(swap! counter-atom inc)))
 
-(def t0 1598800000000)  ; System/currentTimeMillis at some arbitrary moment in the past.
+(def t0 1600000000000)  ; System/currentTimeMillis at some arbitrary moment in the past.
+
+(defn- file-names [dir ending]
+  (->> (sorted-files dir ending)
+       (map #(.getName %))))
 
 (deftest prevayler!-test
   (let [prevayler-dir (tmp-dir)]
@@ -61,7 +66,7 @@
 
     (testing "The timestamp is accessible."
       (with-open [p (prev!)]
-        (is (= 1598800000001 (timestamp p)))))
+        (is (= 1600000000001 (timestamp p)))))
 
     (testing "First run uses initial state"
       (with-open [p (prev!)]
@@ -70,7 +75,7 @@
     (testing "Restart after no events recovers initial state"
       (with-open [p (prev!)]
         (is (= [] (:contacts @p)))
-        (is (= {:contacts ["Ann"] :last-timestamp 1598800000002}
+        (is (= {:contacts ["Ann"] :last-timestamp 1600000000002}
                (handle! p "Ann")))
         (is (= ["Ann"] (:contacts @p)))
         (handle! p "Bob")
@@ -96,7 +101,7 @@
     (testing "Restart after some crash during event handle recovers last state"
       (with-open [p (prev!)]
         (is (= {:contacts ["Ann" "Bob" "Cid"]
-                :last-timestamp 1598800000006}
+                :last-timestamp 1600000000006}
                @p))))
 
     (testing "exception during replay"
@@ -110,7 +115,7 @@
       (with-open [p (prevayler! (assoc options :business-fn (fn [_ _ _]
                                                               (throw (IllegalStateException. "Should not happen")))))]
         (is (= {:contacts ["Ann" "Bob" "Cid" "Dan"]
-                :last-timestamp 1598800000007}
+                :last-timestamp 1600000000007}
                @p))))
 
     (testing "journals are unaffected by snapshot"
@@ -120,11 +125,28 @@
           (snapshot! p)
           (is (= previous-length (total-file-length prevayler-dir "journal5"))))))
 
-    (testing "Simulated crash during snapshot is survived"
+    (testing "Corrupted snapshot can be deleted"
       (let [snapshot-file (File. prevayler-dir "000000011.snapshot5")]
+        (is (.exists snapshot-file))
         (spit snapshot-file "...corruption...")
         (with-out-str
           (is (thrown? clojure.lang.ExceptionInfo (prev!))))
         (.delete snapshot-file))
+      (with-open [p (prev!)]
+        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))
+
+    (testing "Old snapshot deletion"
+      (delete-old-snapshots! prevayler-dir {:keep 3})
+      (is (= ["000000000.snapshot5" "000000008.snapshot5"]
+             (file-names prevayler-dir "snapshot5")))
+      (delete-old-snapshots! prevayler-dir {:keep 2})
+      (is (= ["000000000.snapshot5" "000000008.snapshot5"]
+             (file-names prevayler-dir "snapshot5")))
+      (delete-old-snapshots! prevayler-dir {:keep 1})
+      (is (= ["000000008.snapshot5"]
+             (file-names prevayler-dir "snapshot5")))
+      (delete-old-snapshots! prevayler-dir {:keep 0}) ; At least on will be kept
+      (is (= ["000000008.snapshot5"]
+             (file-names prevayler-dir "snapshot5")))
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))

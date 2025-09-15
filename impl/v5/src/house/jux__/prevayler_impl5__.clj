@@ -2,56 +2,38 @@
   (:require
    [clojure.java.io :as io]
    [house.jux--.prevayler-- :as api]
+   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number rename! root-cause sorted-files]]
    [taoensso.nippy :as nippy])
   (:import
-   [java.io BufferedInputStream BufferedOutputStream Closeable DataInputStream DataOutputStream EOFException File FileInputStream FileOutputStream]
-   [clojure.lang IDeref]))
+   [clojure.lang IDeref]
+   [java.io Closeable DataOutputStream EOFException File]))
 
 (set! *warn-on-reflection* true)
 
 (def filename-number-mask "%09d")
-(def journal-extension  "journal5")
-(def snapshot-extention "snapshot5")
+(def journal-ending   ".journal5")
+(def snapshot-ending  ".snapshot5")
+(def part-file-ending ".part")
 
-(defn- rename! [^File file ^File new-file]
-  (when (.exists new-file)
-    (throw (RuntimeException. (str "Unable to rename " file " to " new-file " (already exists)"))))
-  (when-not (.renameTo file new-file)
-    (throw (RuntimeException. (str "Unable to rename " file " to " new-file)))))
+(defn- nippy-read! [data-in]
+  (try
+    (nippy/thaw-from-in! data-in)
+    (catch Exception e
+      (throw (root-cause e)))))  ; Nippy wraps some Throwables such as OOM in ex-infos recursively. We don't want that.
 
 (defn- read-value! [data-in]
   (try
-    (nippy/thaw-from-in! data-in)
-    (catch EOFException eof
-      (throw eof))
-    (catch Exception corruption
-      (println "Warning - Exception thrown while reading journal (this is normally OK and can happen when the process is killed during write):" corruption)
+    (nippy-read! data-in)
+    (catch Exception e
+      (when-not (instance? EOFException e)
+        (println "Warning - Exception thrown while reading journal (this is normally OK and can happen when the previous process was killed in the middle of a write):" e))
       (throw (EOFException.)))))
-
-(defn list-files [dir]
-  (->> (clojure.java.io/file dir)
-       (.listFiles)
-       (filter #(.isFile ^File %))))
-
-(defn- filename-number [^File file]
-  (Long/parseLong (re-find #"\d+" (.getName file))))
-
-(defn- sorted-files [dir extension]
-  (->> dir
-       list-files
-       (filter #(.endsWith (.getName ^File %) (str "." extension)))
-       (sort-by filename-number)))
-
-(defn- data-output-stream [^File file]
-  (-> file FileOutputStream. BufferedOutputStream. DataOutputStream.))
-(defn- data-input-stream [^File file]
-  (-> file FileInputStream. BufferedInputStream. DataInputStream.))
 
 (defn- restore-journal [envelope ^File journal-file handler]
   (with-open [^Closeable data-in (data-input-stream journal-file)]
     (loop [envelope envelope]
       (if-some [[timestamp event] (try (read-value! data-in)
-                                       (catch EOFException _expected))]
+                                       (catch EOFException _expected nil))]
         (recur
          (update envelope :state handler event timestamp))
         (update envelope :journal-index inc)))))
@@ -59,20 +41,20 @@
 (defn- restore-journals-if-necessary! [initial-state-envelope
                                        dir
                                        handler]
-  (let [journals (sorted-files dir journal-extension)
+  (let [journals (sorted-files dir journal-ending)
         relevant-journals (drop-while #(< (filename-number %) (:journal-index initial-state-envelope)) journals)]
     (reduce
      (fn [envelope journal-file]
-       (when-not (= (:journal-index envelope) (filename-number journal-file))
-         (throw (IllegalStateException. (str "missing journal file number: " (:journal-index envelope)))))
+       (check (= (:journal-index envelope) (filename-number journal-file)) (str "missing journal file number: " (:journal-index envelope)))
        (restore-journal envelope journal-file handler))
      initial-state-envelope
      relevant-journals)))
 
 (defn last-snapshot-file [dir]
-  (last (sorted-files dir snapshot-extention)))
+  (last (sorted-files dir snapshot-ending)))
 
 (defn- restore-snapshot! [snapshot-file]
+  (println "Reading snapshot" (.getName ^File snapshot-file))
   (try
     (with-open [^Closeable data-in (data-input-stream snapshot-file)]
       (read-value! data-in))
@@ -80,35 +62,59 @@
       ; TODO: "Point to readme (delete/rename corrupt snapshot)"
       (throw (ex-info "Error reading snapshot" {:file snapshot-file} e)))))
 
+(defn- write-with-flush! [^DataOutputStream data-out value]
+  (nippy/freeze-to-out! data-out value)
+  (.flush data-out))
+
+(defn- write-snaphot! [{:keys [state journal-index]} dir]
+  (let [snapshot-name (format (str filename-number-mask snapshot-ending) journal-index)
+        part-file (io/file dir (str snapshot-name part-file-ending))]
+    (println "Writing snapshot" snapshot-name)
+    (with-open [^Closeable out (data-output-stream part-file)] ; Overrides old .part file if any.
+      (write-with-flush! out state))
+    (rename! part-file (io/file dir snapshot-name))))
+
 (defn- restore-snapshot-if-necessary! [initial-state-envelope dir]
   (if-some [snapshot-file (last-snapshot-file dir)]
 
     {:state (restore-snapshot! snapshot-file)
      :journal-index (filename-number snapshot-file)}
 
-    initial-state-envelope))
+    (do
+      (write-snaphot! initial-state-envelope dir)
+      initial-state-envelope)))
 
 (defn- restore! [dir handler initial-state]
   (-> {:state initial-state, :journal-index 0}
       (restore-snapshot-if-necessary! dir)
       (restore-journals-if-necessary! dir handler)))
 
-(defn- write-with-flush! [^DataOutputStream data-out value]
-  (nippy/freeze-to-out! data-out value)
-  (.flush data-out))
-
 (defn- start-new-journal! [dir journal-index]
-  (let [file (io/file dir (format (str filename-number-mask ".journal5") journal-index))]
-    (when (.exists file)
-      (throw (IllegalStateException. (str "journal file already exists, index: " journal-index))))
+  (let [file (io/file dir (format (str filename-number-mask journal-ending) journal-index))]
+    (check (not (.exists file)) (str "journal file already exists, index: " journal-index))
     (-> file data-output-stream)))
 
-(defn prevayler! [{:keys [initial-state business-fn timestamp-fn dir]
+(defn delete-old-snapshots!
+  "Deletes all .part files and deletes all but the newest snapshot files. Receives options with the number of snapshot files to keep. Example: {:keep 2}"
+  [dir & [options]]
+  (let [^File dir (io/file dir)
+        snapshots-to-keep (-> (:keep options) (or 1) (max 1))]
+    (->>
+     (sorted-files dir snapshot-ending)
+     (drop-last snapshots-to-keep)
+     (concat (sorted-files dir part-file-ending))
+     (run! #(.delete ^File %)))))
+
+
+(defn prevayler! [{:keys [dir initial-state business-fn timestamp-fn]
                    :or {initial-state {}
                         timestamp-fn #(System/currentTimeMillis)}}]
-  (let [state-envelope-atom (atom (restore! dir business-fn initial-state))
+  
+  (let [^File dir (io/file dir)
+        state-envelope-atom (atom (restore! dir business-fn initial-state))
         journal-out-atom (atom (start-new-journal! dir (:journal-index @state-envelope-atom)))
         snapshot-monitor (Object.)]
+    
     (reify
       api/Prevayler
 
@@ -122,22 +128,19 @@
                 (write-with-flush! @journal-out-atom [timestamp event]) ; (D)urability
                 (swap! state-envelope-atom assoc :state new-state)  ; (A)tomicity
                 (catch Exception e
-                  (.close this)
+                  (.close this)  ; TODO: Recover from what might have been just a network volume hiccup.
                   (throw e))))
             new-state)))
 
       (snapshot! [_]
         (locking snapshot-monitor
-          (let [{:keys [state journal-index]} (locking journal-out-atom
-                                                (let [envelope (swap! state-envelope-atom update :journal-index inc)]
-                                                  (.close ^Closeable @journal-out-atom)
-                                                  (reset! journal-out-atom (start-new-journal! dir (:journal-index envelope))) ; Prevayler remains closed this throws Exception. That's what we want.
-                                                  envelope))
-                file-name (format (str filename-number-mask ".snapshot5") journal-index)
-                snapshot-file (io/file dir (str file-name ".part"))]
-            (with-open [^Closeable out (data-output-stream snapshot-file)] ; Overrides old .part file if any.
-              (write-with-flush! out state))
-            (rename! snapshot-file (io/file dir file-name)))))
+          (let [envelope (locking journal-out-atom
+                           (.close ^Closeable @journal-out-atom)
+                           (let [envelope (swap! state-envelope-atom update :journal-index inc)
+                                 new-journal (start-new-journal! dir (:journal-index envelope))] ; Prevayler remains closed if this throws Exception. TODO: Recover from what might have been just a network volume hiccup.
+                             (reset! journal-out-atom new-journal) 
+                             envelope))]
+            (write-snaphot! envelope dir))))
 
       (timestamp [_] (timestamp-fn))
 

@@ -4,8 +4,14 @@
 
 (set! *warn-on-reflection* true)
 
-(defn check [condition ^String error-msg]
-  (when-not condition (throw (IllegalStateException. error-msg))))
+(defmacro check
+  "Check if the given form is truthy, otherwise throw an exception with
+  the given message. Alternative to `assert` that cannot be turned off
+  and throwing RuntimeException instead of Error."
+  [form & otherwise-msg-fragments]
+  `(when-not ~form
+       (throw (new RuntimeException ^String (str ~@otherwise-msg-fragments)))))
+
 
 (defn rename! [^File file ^File new-file]
   (check (.renameTo file new-file)

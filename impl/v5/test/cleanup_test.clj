@@ -22,13 +22,16 @@
                ["2024-05-01"   ["2024-03-01" "2024-04-15" "2024-05-01"]]   ; Newest: Mar, Apr, May
                ["2024-05-20"   ["2024-03-01" "2024-04-15" "2024-05-20"]]   ; May newest updated
                ["2024-07-01"   ["2024-04-15" "2024-05-20" "2024-07-01"]]]] ; Last 3 existing months: Apr, May, Jul. No files were created in Jun
-        (loop [files []
+        (loop [current-file-names []
                [[file-created expected-kept] & next-steps] steps]
            (when file-created
-             (let [files' (conj files (->file file-created))
-                   kept   (:keep (sut/choose-backup-names max-files-to-keep files'))]
+             (let [kept (->> current-file-names
+                             (cons file-created)
+                             (map ->file)
+                             (sut/choose-backup-names max-files-to-keep)
+                             :keep)]
                (is (= expected-kept kept))
-               (recur files' next-steps))))))
+               (recur kept next-steps))))))
 
 (deftest no-files
   (let [max-files-to-keep 3

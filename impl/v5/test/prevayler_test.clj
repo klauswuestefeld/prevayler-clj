@@ -1,8 +1,9 @@
 (ns prevayler-test
   (:require
    [house.jux--.prevayler-- :refer [handle! timestamp snapshot!]]
-   [house.jux--.prevayler-impl5-- :refer [prevayler! delete-old-snapshots!]]
-   [house.jux--.prevayler-impl5--.util :refer [sorted-files]]
+   [house.jux--.prevayler-impl5-- :refer [prevayler!]]
+   [house.jux--.prevayler-impl5--.tools :as tools]
+   [house.jux--.prevayler-impl5--.util :as util]
    [clojure.java.io :as io]
    [clojure.test :refer [deftest is testing]])
   (:import
@@ -43,7 +44,7 @@
 (def t0 1600000000000)  ; System/currentTimeMillis at some arbitrary moment in the past.
 
 (defn- file-names [dir ending]
-  (->> (sorted-files dir ending)
+  (->> (util/sorted-by-number dir ending)
        (map #(.getName %))))
 
 (deftest prevayler!-test
@@ -136,17 +137,27 @@
         (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))
 
     (testing "Old snapshot deletion"
-      (delete-old-snapshots! prevayler-dir {:keep 3})
+      (let [part-file (File. prevayler-dir "000000000.snapshot5.part")]
+        (spit part-file "anything"))
+      (is (= ["000000000.snapshot5.part"]
+             (file-names prevayler-dir ".snapshot5.part")))
+      
+      (tools/delete-old-snapshots! prevayler-dir {:keep 3})
+      (is (= []
+             (file-names prevayler-dir ".snapshot5.part"))) ; All .snapshot5.part files were deleted.
       (is (= ["000000000.snapshot5" "000000008.snapshot5"]
-             (file-names prevayler-dir "snapshot5")))
-      (delete-old-snapshots! prevayler-dir {:keep 2})
+             (file-names prevayler-dir ".snapshot5")))
+      
+      (tools/delete-old-snapshots! prevayler-dir {:keep 2})
       (is (= ["000000000.snapshot5" "000000008.snapshot5"]
-             (file-names prevayler-dir "snapshot5")))
-      (delete-old-snapshots! prevayler-dir {:keep 1})
+             (file-names prevayler-dir ".snapshot5")))
+      
+      (tools/delete-old-snapshots! prevayler-dir {:keep 1})
       (is (= ["000000008.snapshot5"]
-             (file-names prevayler-dir "snapshot5")))
-      (delete-old-snapshots! prevayler-dir {:keep 0}) ; At least on will be kept
-      (is (= ["000000008.snapshot5"]
-             (file-names prevayler-dir "snapshot5")))
+             (file-names prevayler-dir ".snapshot5")))
+      
+      (is (thrown? RuntimeException 
+                   (tools/delete-old-snapshots! prevayler-dir {:keep 0}))) ; At least one must be kept
+            
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))

@@ -2,7 +2,7 @@
   (:require
    [clojure.java.io :as io]
    [house.jux--.prevayler-- :as api]
-   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number rename! root-cause sorted-files]]
+   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals part-file-ending rename! root-cause snapshot-ending snapshots]]
    [taoensso.nippy :as nippy])
   (:import
    [clojure.lang IDeref]
@@ -11,9 +11,6 @@
 (set! *warn-on-reflection* true)
 
 (def filename-number-mask "%09d")
-(def journal-ending   ".journal5")
-(def snapshot-ending  ".snapshot5")
-(def part-file-ending ".part")
 
 (defn- nippy-read! [data-in]
   (try
@@ -41,17 +38,14 @@
 (defn- restore-journals-if-necessary! [initial-state-envelope
                                        dir
                                        handler]
-  (let [journals (sorted-files dir journal-ending)
-        relevant-journals (drop-while #(< (filename-number %) (:journal-index initial-state-envelope)) journals)]
+  (let [relevant-journals (->> (journals dir)
+                               (drop-while #(< (filename-number %) (:journal-index initial-state-envelope))))]
     (reduce
      (fn [envelope journal-file]
        (check (= (:journal-index envelope) (filename-number journal-file)) (str "missing journal file number: " (:journal-index envelope)))
        (restore-journal envelope journal-file handler))
      initial-state-envelope
      relevant-journals)))
-
-(defn last-snapshot-file [dir]
-  (last (sorted-files dir snapshot-ending)))
 
 (defn- restore-snapshot! [snapshot-file]
   (println "Reading snapshot" (.getName ^File snapshot-file))
@@ -75,7 +69,7 @@
     (rename! part-file (io/file dir snapshot-name))))
 
 (defn- restore-snapshot-if-necessary! [initial-state-envelope dir]
-  (if-some [snapshot-file (last-snapshot-file dir)]
+  (if-some [snapshot-file (last (snapshots dir))]
 
     {:state (restore-snapshot! snapshot-file)
      :journal-index (filename-number snapshot-file)}
@@ -93,18 +87,6 @@
   (let [file (io/file dir (format (str filename-number-mask journal-ending) journal-index))]
     (check (not (.exists file)) (str "journal file already exists, index: " journal-index))
     (-> file data-output-stream)))
-
-(defn delete-old-snapshots!
-  "Deletes all .part files and deletes all but the newest snapshot files. Receives options with the number of snapshot files to keep. Example: {:keep 2}"
-  [dir & [options]]
-  (let [^File dir (io/file dir)
-        snapshots-to-keep (-> (:keep options) (or 1) (max 1))]
-    (->>
-     (sorted-files dir snapshot-ending)
-     (drop-last snapshots-to-keep)
-     (concat (sorted-files dir part-file-ending))
-     (run! #(.delete ^File %)))))
-
 
 (defn prevayler! [{:keys [dir initial-state business-fn timestamp-fn]
                    :or {initial-state {}

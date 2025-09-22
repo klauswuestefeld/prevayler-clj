@@ -1,6 +1,6 @@
 (ns tools.cleanup-test
   (:require [clojure.test :refer [deftest is]]
-            [house.jux--.prevayler-impl5--.tools :as sut])
+            [house.jux--.prevayler-impl5--.cleanup :as sut])
   (:import (java.time LocalDate ZoneOffset)))
 
 (deftest no-files

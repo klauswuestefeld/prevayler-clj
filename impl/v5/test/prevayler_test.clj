@@ -1,8 +1,7 @@
 (ns prevayler-test
   (:require
    [house.jux--.prevayler-- :refer [handle! timestamp snapshot!]]
-   [house.jux--.prevayler-impl5-- :refer [prevayler!]]
-   [house.jux--.prevayler-impl5--.tools :as tools]
+   [house.jux--.prevayler-impl5-- :refer [prevayler! delete-old-snapshots!]]
    [house.jux--.prevayler-impl5--.util :as util]
    [clojure.java.io :as io]
    [clojure.test :refer [deftest is testing]])
@@ -142,22 +141,22 @@
       (is (= ["000000000.snapshot5.part"]
              (file-names prevayler-dir ".snapshot5.part")))
       
-      (tools/delete-old-snapshots! prevayler-dir {:keep 3})
+      (delete-old-snapshots! prevayler-dir {:keep 3})
       (is (= []
              (file-names prevayler-dir ".snapshot5.part"))) ; All .snapshot5.part files were deleted.
       (is (= ["000000000.snapshot5" "000000008.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
       
-      (tools/delete-old-snapshots! prevayler-dir {:keep 2})
+      (delete-old-snapshots! prevayler-dir {:keep 2})
       (is (= ["000000000.snapshot5" "000000008.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
       
-      (tools/delete-old-snapshots! prevayler-dir {:keep 1})
+      (delete-old-snapshots! prevayler-dir {:keep 1})
       (is (= ["000000008.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
       
       (is (thrown? RuntimeException 
-                   (tools/delete-old-snapshots! prevayler-dir {:keep 0}))) ; At least one must be kept
+                   (delete-old-snapshots! prevayler-dir {:keep 0}))) ; At least one must be kept
             
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))

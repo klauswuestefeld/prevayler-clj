@@ -1,7 +1,7 @@
-(ns house.jux--.prevayler-impl5--.tools
+(ns house.jux--.prevayler-impl5--.cleanup
   (:require
    [clojure.java.io :as io]
-   [house.jux--.prevayler-impl5--.util :refer [check list-files part-file-ending snapshot-ending]])
+   [house.jux--.prevayler-impl5--.util :refer [check list-files part-file-ending snapshot-ending snapshots]])
   (:import
    [java.io File]
    [java.time Instant YearMonth ZoneOffset]))

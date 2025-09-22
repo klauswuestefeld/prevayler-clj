@@ -3,6 +3,7 @@
    [clojure.java.io :as io]
    [house.jux--.prevayler-- :as api]
    [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals part-file-ending rename! root-cause snapshot-ending snapshots]]
+   [house.jux--.prevayler-impl5--.cleanup :as cleanup]
    [taoensso.nippy :as nippy])
   (:import
    [clojure.lang IDeref]
@@ -68,8 +69,11 @@
       (write-with-flush! out state))
     (rename! part-file (io/file dir snapshot-name))))
 
+(defn last-snapshot-file [dir]
+  (last (snapshots dir)))
+
 (defn- restore-snapshot-if-necessary! [initial-state-envelope dir]
-  (if-some [snapshot-file (last (snapshots dir))]
+  (if-some [snapshot-file (last-snapshot-file dir)]
 
     {:state (restore-snapshot! snapshot-file)
      :journal-index (filename-number snapshot-file)}
@@ -87,6 +91,8 @@
   (let [file (io/file dir (format (str filename-number-mask journal-ending) journal-index))]
     (check (not (.exists file)) (str "journal file already exists, index: " journal-index))
     (-> file data-output-stream)))
+
+(def delete-old-snapshots! cleanup/delete-old-snapshots!)
 
 (defn prevayler! [{:keys [dir initial-state business-fn timestamp-fn]
                    :or {initial-state {}

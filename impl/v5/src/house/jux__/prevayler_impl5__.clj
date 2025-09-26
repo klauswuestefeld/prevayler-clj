@@ -1,3 +1,48 @@
+; TODO: Cooperative Consistency Across Multiple Instances Sharing the Same Network Dir
+; ====================================================================================
+;
+; Init
+;  Loop until successful:
+;    Create "lock" folder if it doesnt already exist.
+;      All lock files described here will be created in this folder, for tidyness.
+;
+;  Loop intil successful:
+;    Delete all tmp-owner-* lock files
+;    Create tmp-owner-{uuid} lock file containing UUID I generated
+;    rename tmp-owner-{uuid} -> owner lock file (singleton)
+;    On failure, log and wait 4s + jitter.
+;
+; Wait 1min, so the old owner, if any, can yield.
+; Loop every 30s, to see if I still am the owner: (lease mechanism)
+;   Open owner file. Contains my uuid?
+;     No?    deposed = true (Prevayler becomes read-only forever)
+;     Yes?   lastSuccessfulLeaseCheck = currentTimeMillis; error = nil.
+;     Error? error = error message
+;
+; Check before every write: Prevayler is free to write if:
+;   Not deposed
+;   AND Not error
+;   AND lastSuccessfulLeaseCheck newer than 40s.
+;
+;
+; TODO: Bonus: Extra Resilience Against Zombie Journal Writes
+; -----------------------------------------------------------
+;
+; Zombie writes are writes arriving late at the server from some old dead owner that were buffered on a temporarily disconnected network client.
+; To ignore zombie journal appends:
+; 
+; For each journal to read:
+;   Does a file called {journal-number}.journal-metadata5 exist?
+;     No: read the whole journal and write this metadata file with the number of events I just read.
+;     Yes: read only as many events as the amount recorded in the metadata file.
+;
+; To avoid late zombie journal file creation from overriding existing journals:
+;   Before creating a new journal file:
+;     Create a lock/{journal-number}.journal-lock directory (MKDIR the only atomic mutually-exclusive operation we can trust. Even file renames will override each other.)
+;       If it already exists, but the journal file does not, treat the same as an empty journal.
+
+
+
 (ns house.jux--.prevayler-impl5--
   (:require
    [clojure.java.io :as io]

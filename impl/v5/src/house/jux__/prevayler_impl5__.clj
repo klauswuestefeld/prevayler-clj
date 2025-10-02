@@ -3,22 +3,18 @@
 ;
 ; Init
 ;  Loop until successful:
-;    Create "lock" folder if it doesnt already exist.
-;      All lock files described here will be created in this folder, for tidyness.
-;
-;  Loop intil successful:
-;    Delete all tmp-owner-* lock files
-;    Create tmp-owner-{uuid} lock file containing UUID I generated
-;    rename tmp-owner-{uuid} -> owner lock file (singleton)
-;    On failure, log and wait 4s + jitter.
+;    Delete all files inside the "lock" folder, if any.
+;    Delete the "lock" folder, if it exists.
+;    Create "lock" folder. This is important: I must create it, it can't already exist.
+;      Create owner-{uuid}.a file.
 ;
 ; Wait 1min, so the old owner, if any, can yield.
 ; Loop every 30s, to see if I still am the owner: (lease mechanism)
-;   Open owner file. Contains my uuid?
-;     No?    deposed = true (Prevayler becomes read-only forever)
-;     Yes?   lastSuccessfulLeaseCheck = currentTimeMillis; error = nil.
-;     Error? error = error message
-;
+;   Rename lock/owner-{uuid}.a file to lock/owner-{uuid}.b or vice-versa.
+;     If success: lastSuccessfulLeaseCheck atom = currentTimeMillis; error atom = nil.
+;     If neither file (a nor b) exist: deposed atom = true
+;     If some other error: error atom = error message
+;    
 ; Check before every write: Prevayler is free to write if:
 ;   Not deposed
 ;   AND Not error

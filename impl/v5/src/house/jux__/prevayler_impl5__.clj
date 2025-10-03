@@ -4,6 +4,7 @@
    [house.jux--.prevayler-- :as api]
    [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals part-file-ending rename! root-cause snapshot-ending snapshots]]
    [house.jux--.prevayler-impl5--.cleanup :as cleanup]
+   [house.jux--.prevayler-impl5--.write-lease :as write-lease]
    [taoensso.nippy :as nippy])
   (:import
    [clojure.lang IDeref]
@@ -61,30 +62,31 @@
   (nippy/freeze-to-out! data-out value)
   (.flush data-out))
 
-(defn- write-snaphot! [{:keys [state journal-index]} dir]
+(defn- write-snaphot! [{:keys [state journal-index]} dir my-lease]
   (let [snapshot-name (format (str filename-number-mask snapshot-ending) journal-index)
         part-file (io/file dir (str snapshot-name part-file-ending))]
     (println "Writing snapshot" snapshot-name)
     (with-open [^Closeable out (data-output-stream part-file)] ; Overrides old .part file if any.
       (write-with-flush! out state))
+    (write-lease/check! my-lease)
     (rename! part-file (io/file dir snapshot-name))))
 
 (defn last-snapshot-file [dir]
   (last (snapshots dir)))
 
-(defn- restore-snapshot-if-necessary! [initial-state-envelope dir]
+(defn- restore-snapshot-if-necessary! [initial-state-envelope dir my-lease]
   (if-some [snapshot-file (last-snapshot-file dir)]
 
     {:state (restore-snapshot! snapshot-file)
      :journal-index (filename-number snapshot-file)}
 
     (do
-      (write-snaphot! initial-state-envelope dir)
+      (write-snaphot! initial-state-envelope dir my-lease)
       initial-state-envelope)))
 
-(defn- restore! [dir handler initial-state]
+(defn- restore! [dir handler initial-state my-lease]
   (-> {:state initial-state, :journal-index 0}
-      (restore-snapshot-if-necessary! dir)
+      (restore-snapshot-if-necessary! dir my-lease)
       (restore-journals-if-necessary! dir handler)))
 
 (defn- start-new-journal! [dir journal-index]
@@ -99,15 +101,20 @@
                         timestamp-fn #(System/currentTimeMillis)}}]
   
   (let [^File dir (io/file dir)
-        state-envelope-atom (atom (restore! dir business-fn initial-state))
+        my-lease (write-lease/acquire-for! dir)
+        state-envelope-atom (atom (restore! dir business-fn initial-state my-lease))
         journal-out-atom (atom (start-new-journal! dir (:journal-index @state-envelope-atom)))
+        close-journal! #(.close ^Closeable @journal-out-atom)
         snapshot-monitor (Object.)]
+    
+    (write-lease/on-expiry my-lease close-journal!)  ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
     
     (reify
       api/Prevayler
 
       (handle! [this event]
         (locking journal-out-atom ; (I)solation: strict serializability.
+          (write-lease/check! my-lease)
           (let [{:keys [state]} @state-envelope-atom
                 timestamp (timestamp-fn)
                 new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
@@ -123,15 +130,16 @@
       (snapshot! [_]
         (locking snapshot-monitor
           (let [envelope (locking journal-out-atom
-                           (.close ^Closeable @journal-out-atom)
+                           (write-lease/check! my-lease)
+                           (close-journal!)
                            (let [envelope (swap! state-envelope-atom update :journal-index inc)
                                  new-journal (start-new-journal! dir (:journal-index envelope))] ; Prevayler remains closed if this throws Exception. TODO: Recover from what might have been just a network volume hiccup.
-                             (reset! journal-out-atom new-journal) 
+                             (reset! journal-out-atom new-journal)
                              envelope))]
-            (write-snaphot! envelope dir))))
+            (write-snaphot! envelope dir my-lease))))
 
       (timestamp [_] (timestamp-fn))
 
       IDeref (deref [_] (:state @state-envelope-atom))
 
-      Closeable (close [_] (.close ^Closeable @journal-out-atom)))))
+      Closeable (close [_] (close-journal!)))))

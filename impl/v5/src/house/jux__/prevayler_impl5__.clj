@@ -140,16 +140,17 @@
 (defn prevayler! [{:keys [dir initial-state business-fn timestamp-fn]
                    :or {initial-state {}
                         timestamp-fn #(System/currentTimeMillis)}}]
-  
+
   (let [^File dir (io/file dir)
-        my-lease (write-lease/acquire-for! dir)
+        journal-out-atom (atom nil)
+        close-journal! #(when-let [journal-out @journal-out-atom]
+                          (.close ^Closeable journal-out)) ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
+        my-lease (write-lease/acquire-for! dir close-journal!)
         state-envelope-atom (atom (restore! dir business-fn initial-state my-lease))
-        journal-out-atom (atom (start-new-journal! dir (:journal-index @state-envelope-atom)))
-        close-journal! #(.close ^Closeable @journal-out-atom)
         snapshot-monitor (Object.)]
-    
-    (write-lease/on-expiry my-lease close-journal!)  ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
-    
+
+    (reset! journal-out-atom (start-new-journal! dir (:journal-index @state-envelope-atom)))
+
     (reify
       api/Prevayler
 

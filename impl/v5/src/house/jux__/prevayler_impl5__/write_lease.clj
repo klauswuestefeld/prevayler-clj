@@ -54,16 +54,25 @@
    Calls f when we gain knowledge that some other owner (normally a different machine) has taken over the lease."
   ;; This "opaque handle + fns" smells like a protocol.
   [dir f]
-  (atom {:dir dir})
-  ;; TODO: Implement
-  )
+  (let [res (atom {:dir dir
+                   :last-successful-lease-check (System/currentTimeMillis)})]
+    (future
+      (loop []
+        ;; TODO implement real check
+        (swap! res assoc :last-successful-lease-check (System/currentTimeMillis))
+        (Thread/sleep 30000)
+        (recur)))
+    res))
 
 (defn check!
   "Throws an exception with a helpful message in these situations:
      - The lock file has been deleted (normally by another owner taking over).
      - The last attempt to refresh the lease (rename our lock file) has failed and we cannot be certain whether the file still exists or has been deleted."
   [my-lease]
-
-  ;; TODO: Implement
-
-  )
+  (let [{:keys [deposed error-message last-successful-lease-check]} @my-lease]
+    (when deposed
+      (throw (ex-info "This instance is unable to write" {})))
+    (when error-message
+      (throw (ex-info "This instance is temporarily unable to write" {:error-message error-message})))
+    (when (> (- (System/currentTimeMillis) last-successful-lease-check) 40000)
+      (throw (ex-info "This instance is temporarily unable to write" {:last-successfule-lease-check last-successful-lease-check})))))

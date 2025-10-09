@@ -15,9 +15,8 @@
    Calls f when we gain knowledge that some other owner (normally a different machine) has taken over the lease."
   ;; This "opaque handle + fns" smells like a protocol.
   [dir f]
-
-                                        ; TODO: Implement
-
+  (atom {:dir dir})
+  ;; TODO: Implement
   )
 
 (defn check!
@@ -26,6 +25,6 @@
      - The last attempt to refresh the lease (rename our lock file) has failed and we cannot be certain whether the file still exists or has been deleted."
   [my-lease]
 
-  ; TODO: Implement
+  ;; TODO: Implement
 
   )

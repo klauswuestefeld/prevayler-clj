@@ -176,10 +176,10 @@
                            (write-lease/check! dir-lease)
                            (close-journal!)
                            (let [envelope (swap! state-envelope-atom update :journal-index inc)
-                                 new-journal (start-new-journal! dir (:journal-index envelope))] ; Prevayler remains closed if this throws Exception. TODO: Recover from what might have been just a network volume hiccup.
+                                 new-journal (start-new-journal! dir-lease (:journal-index envelope))] ; Prevayler remains closed if this throws Exception. TODO: Recover from what might have been just a network volume hiccup.
                              (reset! journal-out-atom new-journal)
                              envelope))]
-            (write-snaphot! envelope dir dir-lease))))
+            (write-snaphot! envelope dir-lease))))
 
       (timestamp [_] (timestamp-fn))
 

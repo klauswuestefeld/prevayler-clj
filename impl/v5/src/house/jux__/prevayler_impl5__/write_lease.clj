@@ -2,6 +2,9 @@
 
 (set! *warn-on-reflection* true)
 
+(defn dir [lease]
+  (-> lease deref :dir))
+
 (defn acquire-for!
   "Acquires a virtual, exclusive lease to write on dir. Implementation:
      - Deletes the lock file of the previous owner, if any. Deletes the 'lock' directory in dir.
@@ -13,7 +16,7 @@
   ;; This "opaque handle + fns" smells like a protocol.
   [dir f]
 
-  ; TODO: Implement
+                                        ; TODO: Implement
 
   )
 

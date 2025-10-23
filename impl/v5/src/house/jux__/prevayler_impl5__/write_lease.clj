@@ -51,16 +51,17 @@
      - Starts to periodically refresh the lease (rename our lock file to make sure it still exists).
    Cooperatively and definitively yields the lease when some other owner deletes our lock file.
    Returns the lease (an opaque handle) to be used with the other fns in this namespace. 
-   Calls f when we gain knowledge that some other owner (normally a different machine) has taken over the lease."
+   Calls on-deposed when we gain knowledge that some other owner (normally a different machine) has taken over the lease."
   ;; This "opaque handle + fns" smells like a protocol.
-  [dir f]
+  [dir sleep-interval _on-deposed]
   (let [res (atom {:dir dir
-                   :last-successful-lease-check (System/currentTimeMillis)})]
+                   :last-successful-lease-check (System/currentTimeMillis) 
+                   :sleep-interval sleep-interval})]
     (future
       (loop []
         ;; TODO implement real check
         (swap! res assoc :last-successful-lease-check (System/currentTimeMillis))
-        (Thread/sleep 30000)
+        (Thread/sleep ^long sleep-interval)
         (recur)))
     res))
 
@@ -69,10 +70,10 @@
      - The lock file has been deleted (normally by another owner taking over).
      - The last attempt to refresh the lease (rename our lock file) has failed and we cannot be certain whether the file still exists or has been deleted."
   [my-lease]
-  (let [{:keys [deposed error-message last-successful-lease-check]} @my-lease]
+  (let [{:keys [deposed error-message last-successful-lease-check sleep-interval]} @my-lease]
     (when deposed
       (throw (ex-info "This instance is unable to write" {})))
     (when error-message
       (throw (ex-info "This instance is temporarily unable to write" {:error-message error-message})))
-    (when (> (- (System/currentTimeMillis) last-successful-lease-check) 40000)
+    (when (> (- (System/currentTimeMillis) last-successful-lease-check) (* sleep-interval 1.2))
       (throw (ex-info "This instance is temporarily unable to write" {:last-successfule-lease-check last-successful-lease-check})))))

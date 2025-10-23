@@ -97,15 +97,16 @@
 
 (def delete-old-snapshots! cleanup/delete-old-snapshots!)
 
-(defn prevayler! [{:keys [dir initial-state business-fn timestamp-fn]
+(defn prevayler! [{:keys [dir initial-state business-fn timestamp-fn sleep-interval]
                    :or {initial-state {}
-                        timestamp-fn #(System/currentTimeMillis)}}]
+                        timestamp-fn #(System/currentTimeMillis)
+                        sleep-interval 30000}}]
 
   (let [^File dir (io/file dir)
         journal-out-atom (atom nil)
         close-journal! #(when-let [journal-out @journal-out-atom]
                           (.close ^Closeable journal-out)) ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
-        dir-lease (write-lease/acquire-for! dir close-journal!)
+        dir-lease (write-lease/acquire-for! dir sleep-interval close-journal!)
         state-envelope-atom (atom (restore! business-fn initial-state dir-lease))
         snapshot-monitor (Object.)]
 

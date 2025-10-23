@@ -36,10 +36,6 @@
        (apply +)
        (check-positive "Total file length should be positive.")))
 
-(defn counter [start]  ; Deterministic timestamps.
-  (let [counter-atom (atom start)]
-    #(swap! counter-atom inc)))
-
 (def t0 1600000000000)  ; System/currentTimeMillis at some arbitrary moment in the past.
 
 (defn- file-names [dir ending]
@@ -58,9 +54,11 @@
       (is (.delete (File. prevayler-dir "000000000.journal5")))))
 
   (let [prevayler-dir (tmp-dir)
+        counter-atom (atom t0)
         options {:initial-state initial-state
                  :business-fn contact-list
-                 :timestamp-fn (counter t0)
+                 :timestamp-fn #(swap! counter-atom inc)
+                 :sleep-period 10000 ; TODO reduce this number when we fix infinite loop
                  :dir prevayler-dir}
         prev! #(prevayler! options)]
 
@@ -159,4 +157,10 @@
                    (delete-old-snapshots! prevayler-dir {:keep 0}))) ; At least one must be kept
             
       (with-open [p (prev!)]
-        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))))
+        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))
+
+    #_(testing ""
+      (with-open [p1 (prev!)]
+        (with-open [_ (prev!)]
+          (is (thrown? Exception
+                       (handle! p1 "Boom"))))))))

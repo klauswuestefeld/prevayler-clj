@@ -5,7 +5,7 @@
 
   (latest-journal! [this default-state]
     "Return a map with:
-       :snapshot - The state saved in the last snapshot. Can be nil.
+       :snapshot - The state saved in the last snapshot. Defaults to default-state.
        :events - A lazy sequence of all events after that snapshot.
      Must be called before the first invocation of append-to-journal!")
 

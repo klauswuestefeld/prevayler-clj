@@ -3,7 +3,7 @@
 (defprotocol Storage
   "Storage mechanism for snapshots and journaled events."
 
-  (latest-journal! [this]
+  (latest-journal! [this default-state]
     "Return a map with:
        :snapshot - The state saved in the last snapshot. Can be nil.
        :events - A lazy sequence of all events after that snapshot.

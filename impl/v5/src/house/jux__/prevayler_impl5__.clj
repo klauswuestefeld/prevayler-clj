@@ -18,6 +18,7 @@
      snapshot
      events)))
 
+;; TODO: move this to storage implementation
 (def delete-old-snapshots! cleanup/delete-old-snapshots!)
 
 (defn prevayler! [{:keys [initial-state business-fn timestamp-fn storage]

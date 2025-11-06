@@ -4,8 +4,9 @@
   "Storage mechanism for snapshots and journaled events."
 
   (latest-journal! [this]
-    "Return a map with the most recent snapshot and 
-     a lazy sequence of all events after that snapshot.
+    "Return a map with:
+       :snapshot - The state saved in the last snapshot. Can be nil.
+       :events - A lazy sequence of all events after that snapshot.
      Must be called before the first invocation of append-to-journal!")
 
   (append-to-journal! [this event]

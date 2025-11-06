@@ -1,7 +1,7 @@
 (ns house.jux--.prevayler-impl5--.storage.file-directory
   (:require
    [clojure.java.io :as io]
-   [house.jux--.prevayler-impl5.storage :as storage]
+   [house.jux--.prevayler-impl5--.storage :as storage]
    [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals part-file-ending rename! root-cause snapshot-ending snapshots]]
    [house.jux--.prevayler-impl5--.cleanup :as cleanup]
    [house.jux--.prevayler-impl5--.write-lease :as write-lease]
@@ -147,6 +147,9 @@
 
       Closeable (close [_] (close-journal!)))))
 
-
-(defn open! [^File directory]
-  (reify storage/Storage))
+(defn open! [{:keys [^File dir sleep-interval]
+              :or {sleep-interval 30000}}]
+  (reify storage/Storage
+    (latest-journal! [_this]
+      {:snapshot
+       :events })))

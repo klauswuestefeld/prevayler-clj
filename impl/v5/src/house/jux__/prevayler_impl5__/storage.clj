@@ -3,16 +3,10 @@
 (defprotocol Storage
   "Storage mechanism for snapshots and journaled events."
 
-  (latest-snapshot! [this]
-    "Returns the most recent snapshot, or nil if none exists.
-     Must be called first and only once.
-     Throws on error.")
-
-  (latest-journaled-events! [this]
-    "Returns a lazy sequence of all events journaled after the latest snapshot.
-     Must be called after 'latest-snapshot' and only once.
-     Throws on error.
-     Returned lazy seq also throws on errors during realization.")
+  (latest-journal! [this]
+    "Return a map with the most recent snapshot and 
+     a lazy sequence of all events after that snapshot.
+     Must be called before the first invocation of append-to-journal!")
 
   (append-to-journal! [this event]
     "Serializes event (opaque value) and appends it to some reasonably durable journal.

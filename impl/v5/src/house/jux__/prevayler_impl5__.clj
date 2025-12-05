@@ -13,7 +13,7 @@
 (defn- restore! [handler initial-state storage]
   (let [{:keys [snapshot events]} (storage/latest-journal! storage initial-state)]
     (reduce
-     (fn [acc [[timestamp event]]]
+     (fn [acc [timestamp event]]
        (handler acc event timestamp))
      snapshot
      events)))
@@ -31,23 +31,20 @@
     (reify
       api/Prevayler
 
-      (handle! [this event]
+      (handle! [_ event]
         (locking event-monitor ; (I)solation: strict serializability.
           (let [state @state-atom
                 timestamp (timestamp-fn)
                 new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
             (when-not (identical? new-state state)
-              (try
-                (storage/append-to-journal! storage [timestamp event]) ; (D)urability
-                (swap! state-atom assoc :state new-state)  ; (A)tomicity
-                (catch Exception e
-                  (.close this)  ; TODO: Recover from what might have been just a network volume hiccup.
-                  (throw e))))
+              (storage/append-to-journal! storage [timestamp event]) ; (D)urability - If an exception is thrown, the event was not stored and will not be applied.
+              (swap! state-atom assoc :state new-state))   ; (A)tomicity
             new-state)))
 
       (snapshot! [_]
-        (locking event-monitor
-          (storage/start-taking-snapshot! storage @state-atom)))
+        (-> (locking event-monitor
+              (storage/start-taking-snapshot! storage @state-atom))
+            deref))
 
       (timestamp [_] (timestamp-fn))
 

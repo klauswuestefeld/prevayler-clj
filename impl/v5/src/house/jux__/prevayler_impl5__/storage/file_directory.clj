@@ -4,10 +4,8 @@
    [house.jux--.prevayler-impl5--.storage :as storage]
    [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals part-file-ending rename! root-cause snapshot-ending snapshots]]
    [house.jux--.prevayler-impl5--.cleanup :as cleanup]
-   [house.jux--.prevayler-impl5--.write-lease :as write-lease]
    [taoensso.nippy :as nippy])
   (:import
-   [clojure.lang IDeref]
    [java.io Closeable DataOutputStream EOFException File]))
 
 (set! *warn-on-reflection* true)
@@ -20,40 +18,11 @@
     (catch Exception e
       (throw (root-cause e)))))  ; Nippy wraps some Throwables such as OOM in ex-infos recursively. We don't want that.
 
-(defn- read-value! [data-in]
-  (try
-    (nippy-read! data-in)
-    (catch Exception e
-      (when-not (instance? EOFException e)
-        (println "Warning - Exception thrown while reading journal (this is normally OK and can happen when the previous process was killed in the middle of a write):" e))
-      (throw (EOFException.)))))
-
-(defn- restore-journal [envelope ^File journal-file handler]
-  (with-open [^Closeable data-in (data-input-stream journal-file)]
-    (loop [envelope envelope]
-      (if-some [[timestamp event] (try (read-value! data-in)
-                                       (catch EOFException _expected nil))]
-        (recur
-         (update envelope :state handler event timestamp))
-        (update envelope :journal-index inc)))))
-
-(defn- restore-journals-if-necessary! [initial-state-envelope
-                                       dir
-                                       handler]
-  (let [relevant-journals (->> (journals dir)
-                               (drop-while #(< (filename-number %) (:journal-index initial-state-envelope))))]
-    (reduce
-     (fn [envelope journal-file]
-       (check (= (:journal-index envelope) (filename-number journal-file)) (str "missing journal file number: " (:journal-index envelope)))
-       (restore-journal envelope journal-file handler))
-     initial-state-envelope
-     relevant-journals)))
-
-(defn- restore-snapshot! [snapshot-file]
-  (println "Reading snapshot" (.getName ^File snapshot-file))
+(defn- restore-snapshot! [^File snapshot-file]
+  (println "Reading snapshot" (.getAbsolutePath snapshot-file))
   (try
     (with-open [^Closeable data-in (data-input-stream snapshot-file)]
-      (read-value! data-in))
+      (nippy-read! data-in))
     (catch Exception e
       ; TODO: "Point to readme (delete/rename corrupt snapshot)"
       (throw (ex-info "Error reading snapshot" {:file snapshot-file} e)))))
@@ -62,53 +31,127 @@
   (nippy/freeze-to-out! data-out value)
   (.flush data-out))
 
-(defn- write-snaphot! [{:keys [state journal-index]} dir-lease]
+(defn- write-snaphot! [dir {:keys [state journal-index]}]
   (let [snapshot-name (format (str filename-number-mask snapshot-ending) journal-index)
-        part-file (io/file (write-lease/dir dir-lease) (str snapshot-name part-file-ending))]
+        part-file (io/file dir (str snapshot-name part-file-ending))]
     (println "Writing snapshot" snapshot-name)
     (with-open [^Closeable out (data-output-stream part-file)] ; Overrides old .part file if any.
       (write-with-flush! out state))
-    (write-lease/check! dir-lease)
-    (rename! part-file (io/file (write-lease/dir dir-lease) snapshot-name))))
+    ; (write-lease/check! dir-lease)
+    (rename! part-file (io/file dir snapshot-name))))
 
-(defn last-snapshot-file [dir]
-  (last (snapshots dir)))
-
-(defn- restore-snapshot-if-necessary! [initial-state-envelope dir-lease]
-  (if-some [snapshot-file (last-snapshot-file (write-lease/dir dir-lease))]
+(defn- restore-snapshot-if-necessary! [^File dir default-state]
+  (if-some [snapshot-file (last (snapshots dir))]
 
     {:state (restore-snapshot! snapshot-file)
      :journal-index (filename-number snapshot-file)}
 
-    (do
-      (write-snaphot! initial-state-envelope dir-lease)
-      initial-state-envelope)))
+    (let [result {:state default-state
+                  :journal-index 0}]
+      (write-snaphot! ^File dir result)
+      result)))
 
-(defn- restore! [handler initial-state dir-lease]
-  (-> {:state initial-state, :journal-index 0}
-      (restore-snapshot-if-necessary! dir-lease)
-      (restore-journals-if-necessary! (write-lease/dir dir-lease) handler)))
+(defn- read-event! [data-in]
+  (try
+    (nippy-read! data-in)
+    (catch Exception e
+      (when-not (instance? EOFException e)
+        (println "Warning - Exception thrown while reading journal (this is normally OK and can happen when the previous process was killed in the middle of a write):" e))
+      (throw (EOFException.)))))
 
-(defn- start-new-journal! [dir-lease journal-index]
-  (write-lease/check! dir-lease)
-  (let [file (io/file (write-lease/dir dir-lease) (format (str filename-number-mask journal-ending) journal-index))]
-    (check (not (.exists file)) (str "journal file already exists, index: " journal-index))
-    (-> file data-output-stream)))
+(defn- journaled-events [^File journal-file]
+  (let [^Closeable data-in (data-input-stream journal-file)
+        step (fn step []
+               (lazy-seq
+                (if-some [event (try (read-event! data-in)
+                                     (catch EOFException _expected nil))]
+                  (cons event (step))
+                  (do
+                    (.close data-in)
+                    nil))))]
+    (step)))
+
+
+(defn- restore-events! [journal-files initial-journal-index]
+  (->> journal-files
+       (drop-while #(< (filename-number %) initial-journal-index))
+       (mapcat journaled-events)))
+
+(defn- start-new-journal! [dir journal-atom]
+  (let [next-index (if-some [index (:index @journal-atom)]
+                     (inc index)
+                     0)
+        file (io/file dir (format (str filename-number-mask journal-ending) next-index))]
+    (check (not (.exists file)) (str "journal file already exists: " file))
+    (reset! journal-atom {:data-out (-> file data-output-stream)
+                          :index next-index})))
+
+
+(defn open! [{:keys [^File dir #_sleep-interval]
+              #_#_:or {sleep-interval 30000}}]
+  (let [journal-atom (atom nil)
+        close-journal! #(when-some [data-out (:data-out @journal-atom)]
+                          (.close ^Closeable data-out))]  ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
+        
+    (reify
+      storage/Storage
+
+      (latest-journal! [_this default-state]
+        (let [{:keys [state journal-index]} (restore-snapshot-if-necessary! dir default-state)
+              journal-files (journals dir)
+              events (restore-events! journal-files journal-index)]
+          (reset! journal-atom {:index (some-> journal-files last filename-number)})
+          (start-new-journal! dir journal-atom)
+          {:snapshot state
+           :events events}))
+
+      (append-to-journal! [this event]
+        (try
+          (write-with-flush! (:data-out @journal-atom) event)
+          (catch Exception e
+            (.close this)  ; TODO: Recover from what might have been just a network volume hiccup.
+            (throw e))))
+
+      #_"Serializes state (opaque value) and stores it as a snapshot asynchronously.
+         Returns an IDeref that resolves to :done or throws on error.
+         Must be called after the latest-journal! events have been consumed.
+         Must not be called concurrently with append-to-journal! (caller must synchronize externally) because this Storage does not have information to properly sequence them."
+
+
+      (start-taking-snapshot! [this state]
+        ; Error is concurrent snapshot.
+         (future
+           
+           :done))
+      
+      Closeable (close [_] (close-journal!)))))
+
+
+
+
+
+
+
+
+
+
+
+
+
+;       (check (= (:journal-index envelope) (filename-number journal-file)) (str "missing journal file number: " (:journal-index envelope)))
 
 (def delete-old-snapshots! cleanup/delete-old-snapshots!)
 
-(defn prevayler! [{:keys [dir initial-state business-fn timestamp-fn sleep-interval]
-                   :or {initial-state {}
-                        timestamp-fn #(System/currentTimeMillis)
-                        sleep-interval 30000}}]
 
-  (let [^File dir (io/file dir)
-        journal-out-atom (atom nil)
-        close-journal! #(when-let [journal-out @journal-out-atom]
-                          (.close ^Closeable journal-out)) ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
+
+#_
+(defn prevayler! [...]
+
+  (let [
         dir-lease (write-lease/acquire-for! dir sleep-interval close-journal!)
-        state-envelope-atom (atom (restore! business-fn initial-state dir-lease))
-        snapshot-monitor (Object.)]
+        ]
+
+    
 
     (reset! journal-out-atom (start-new-journal! dir-lease (:journal-index @state-envelope-atom)))
 
@@ -122,12 +165,8 @@
                 timestamp (timestamp-fn)
                 new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
             (when-not (identical? new-state state)
-              (try
-                (write-with-flush! @journal-out-atom [timestamp event]) ; (D)urability
-                (swap! state-envelope-atom assoc :state new-state)  ; (A)tomicity
-                (catch Exception e
-                  (.close this)  ; TODO: Recover from what might have been just a network volume hiccup.
-                  (throw e))))
+              ...
+              )
             new-state)))
 
       (snapshot! [_]
@@ -143,13 +182,4 @@
 
       (timestamp [_] (timestamp-fn))
 
-      IDeref (deref [_] (:state @state-envelope-atom))
-
-      Closeable (close [_] (close-journal!)))))
-
-(defn open! [{:keys [^File dir sleep-interval]
-              :or {sleep-interval 30000}}]
-  (reify storage/Storage
-    (latest-journal! [_this]
-      {:snapshot
-       :events })))
+      IDeref (deref [_] (:state @state-envelope-atom)))))

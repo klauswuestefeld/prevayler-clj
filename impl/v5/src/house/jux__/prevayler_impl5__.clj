@@ -27,7 +27,8 @@
                    :as opts}]
   (let [storage (or storage (file-directory/open! opts))
         state-atom (atom (restore! business-fn initial-state storage))
-        event-monitor (Object.)]
+        event-monitor (Object.)
+        snapshot-monitor (Object.)]
     (reify
       api/Prevayler
 
@@ -38,16 +39,17 @@
                 new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
             (when-not (identical? new-state state)
               (storage/append-to-journal! storage [timestamp event]) ; (D)urability - If an exception is thrown, the event was not stored and will not be applied.
-              (swap! state-atom assoc :state new-state))   ; (A)tomicity
+              (reset! state-atom new-state))   ; (A)tomicity
             new-state)))
 
       (snapshot! [_]
-        (-> (locking event-monitor
-              (storage/start-taking-snapshot! storage @state-atom))
-            deref))
+        (locking snapshot-monitor
+          (-> (locking event-monitor
+                (storage/start-taking-snapshot! storage @state-atom))
+              deref)))
 
       (timestamp [_] (timestamp-fn))
 
       IDeref (deref [_] @state-atom)
 
-      Closeable (close [_] (.close storage)))))
+      Closeable (close [_] (.close ^java.io.Closeable storage)))))

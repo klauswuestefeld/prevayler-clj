@@ -77,12 +77,14 @@
        (drop-while #(< (filename-number %) initial-journal-index))
        (mapcat journaled-events)))
 
+; TODO close old data-out
 (defn- start-new-journal! [dir journal-atom]
   (let [next-index (if-some [index (:index @journal-atom)]
                      (inc index)
                      0)
         file (io/file dir (format (str filename-number-mask journal-ending) next-index))]
     (check (not (.exists file)) (str "journal file already exists: " file))
+    (prn [:journal-file file])
     (reset! journal-atom {:data-out (-> file data-output-stream)
                           :index next-index})))
 
@@ -92,7 +94,7 @@
   (let [journal-atom (atom nil)
         close-journal! #(when-some [data-out (:data-out @journal-atom)]
                           (.close ^Closeable data-out))]  ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
-        
+
     (reify
       storage/Storage
 
@@ -117,13 +119,12 @@
          Must be called after the latest-journal! events have been consumed.
          Must not be called concurrently with append-to-journal! (caller must synchronize externally) because this Storage does not have information to properly sequence them."
 
+      (start-taking-snapshot! [_this state]
+        (let [{:keys [index]} (start-new-journal! dir journal-atom)]
+          (future
+            (write-snaphot! dir {:journal-index index :state state})
+            :done)))
 
-      (start-taking-snapshot! [this state]
-        ; Error is concurrent snapshot.
-         (future
-           
-           :done))
-      
       Closeable (close [_] (close-journal!)))))
 
 

@@ -124,7 +124,8 @@
           (is (= previous-length (total-file-length prevayler-dir "journal5"))))))
 
     (testing "Corrupted snapshot can be deleted"
-      (let [snapshot-file (File. prevayler-dir "000000011.snapshot5")]
+      (let [snapshot-file (File. prevayler-dir "000000005.snapshot5")]
+        (prn (file-names prevayler-dir "snapshot5"))
         (is (.exists snapshot-file))
         (spit snapshot-file "...corruption...")
         (with-out-str
@@ -142,15 +143,15 @@
       (delete-old-snapshots! prevayler-dir {:keep 3})
       (is (= []
              (file-names prevayler-dir ".snapshot5.part"))) ; All .snapshot5.part files were deleted.
-      (is (= ["000000000.snapshot5" "000000008.snapshot5"]
+      (is (= ["000000000.snapshot5" "000000003.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
       
       (delete-old-snapshots! prevayler-dir {:keep 2})
-      (is (= ["000000000.snapshot5" "000000008.snapshot5"]
+      (is (= ["000000000.snapshot5" "000000003.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
       
       (delete-old-snapshots! prevayler-dir {:keep 1})
-      (is (= ["000000008.snapshot5"]
+      (is (= ["000000003.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
       
       (is (thrown? RuntimeException 

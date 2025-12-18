@@ -88,9 +88,10 @@
     (reset! journal-atom {:data-out (-> file data-output-stream)
                           :index next-index})))
 
-(defn- data-out! [journal-atom]
+(defn- data-out! [dir journal-atom]
+  (when-not (:data-out @journal-atom)
+    (start-new-journal! dir journal-atom))
   (:data-out @journal-atom))
-
 
 (defn open! [{:keys [^File dir #_sleep-interval]
               #_#_:or {sleep-interval 30000}}]
@@ -106,13 +107,12 @@
               journal-files (journals dir)
               events (restore-events! journal-files journal-index)]
           (reset! journal-atom {:index (some-> journal-files last filename-number)})
-          ; (start-new-journal! dir journal-atom)
           {:snapshot state
            :events events}))
 
       (append-to-journal! [this event]
         (try
-          (write-with-flush! (data-out! journal-atom) event)
+          (write-with-flush! (data-out! dir journal-atom) event)
           (catch Exception e
             (.close this)  ; TODO: Recover from what might have been just a network volume hiccup.
             (throw e))))

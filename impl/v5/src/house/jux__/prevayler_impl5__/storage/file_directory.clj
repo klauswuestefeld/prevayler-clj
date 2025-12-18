@@ -88,6 +88,9 @@
     (reset! journal-atom {:data-out (-> file data-output-stream)
                           :index next-index})))
 
+(defn- data-out! [journal-atom]
+  (:data-out @journal-atom))
+
 
 (defn open! [{:keys [^File dir #_sleep-interval]
               #_#_:or {sleep-interval 30000}}]
@@ -103,21 +106,16 @@
               journal-files (journals dir)
               events (restore-events! journal-files journal-index)]
           (reset! journal-atom {:index (some-> journal-files last filename-number)})
-          (start-new-journal! dir journal-atom)
+          ; (start-new-journal! dir journal-atom)
           {:snapshot state
            :events events}))
 
       (append-to-journal! [this event]
         (try
-          (write-with-flush! (:data-out @journal-atom) event)
+          (write-with-flush! (data-out! journal-atom) event)
           (catch Exception e
             (.close this)  ; TODO: Recover from what might have been just a network volume hiccup.
             (throw e))))
-
-      #_"Serializes state (opaque value) and stores it as a snapshot asynchronously.
-         Returns an IDeref that resolves to :done or throws on error.
-         Must be called after the latest-journal! events have been consumed.
-         Must not be called concurrently with append-to-journal! (caller must synchronize externally) because this Storage does not have information to properly sequence them."
 
       (start-taking-snapshot! [_this state]
         (let [{:keys [index]} (start-new-journal! dir journal-atom)]

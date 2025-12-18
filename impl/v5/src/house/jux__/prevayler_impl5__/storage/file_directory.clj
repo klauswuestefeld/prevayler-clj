@@ -71,33 +71,33 @@
                     nil))))]
     (step)))
 
-
 (defn- restore-events! [journal-files initial-journal-index]
   (->> journal-files
        (drop-while #(< (filename-number %) initial-journal-index))
        (mapcat journaled-events)))
 
-; TODO close old data-out
-(defn- start-new-journal! [dir journal-atom]
-  (let [next-index (if-some [index (:index @journal-atom)]
-                     (inc index)
-                     0)
-        file (io/file dir (format (str filename-number-mask journal-ending) next-index))]
+(defn- open-journal! [dir journal-atom]
+  (let [{:keys [index]} @journal-atom
+        file (io/file dir (format (str filename-number-mask journal-ending) index))]
     (check (not (.exists file)) (str "journal file already exists: " file))
-    (prn [:journal-file file])
-    (reset! journal-atom {:data-out (-> file data-output-stream)
-                          :index next-index})))
+    (swap! journal-atom assoc :data-out (-> file data-output-stream))))
 
 (defn- data-out! [dir journal-atom]
+  (when (:closed @journal-atom)
+    (throw (ex-info "storage is closed" {})))
   (when-not (:data-out @journal-atom)
-    (start-new-journal! dir journal-atom))
+    (open-journal! dir journal-atom))
   (:data-out @journal-atom))
+
+; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
+(defn- close-journal! [journal-atom]
+  (when-some [data-out (:data-out @journal-atom)]
+    (.close ^Closeable data-out))
+  (swap! journal-atom dissoc :data-out))
 
 (defn open! [{:keys [^File dir #_sleep-interval]
               #_#_:or {sleep-interval 30000}}]
-  (let [journal-atom (atom nil)
-        close-journal! #(when-some [data-out (:data-out @journal-atom)]
-                          (.close ^Closeable data-out))]  ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
+  (let [journal-atom (atom nil)]
 
     (reify
       storage/Storage
@@ -106,7 +106,7 @@
         (let [{:keys [state journal-index]} (restore-snapshot-if-necessary! dir default-state)
               journal-files (journals dir)
               events (restore-events! journal-files journal-index)]
-          (reset! journal-atom {:index (some-> journal-files last filename-number)})
+          (reset! journal-atom {:index (or (some-> journal-files last filename-number inc) journal-index)})
           {:snapshot state
            :events events}))
 
@@ -114,71 +114,54 @@
         (try
           (write-with-flush! (data-out! dir journal-atom) event)
           (catch Exception e
-            (.close this)  ; TODO: Recover from what might have been just a network volume hiccup.
+            (.close this) ; TODO: Recover from what might have been just a network volume hiccup.
             (throw e))))
 
       (start-taking-snapshot! [_this state]
-        (let [{:keys [index]} (start-new-journal! dir journal-atom)]
+        (close-journal! journal-atom)
+        (let [{:keys [index]} @journal-atom]
           (future
-            (write-snaphot! dir {:journal-index index :state state})
+            (write-snaphot! dir {:journal-index (inc index) :state state})
             :done)))
 
-      Closeable (close [_] (close-journal!)))))
-
-
-
-
-
-
-
-
-
-
-
-
+      Closeable (close [_]
+                  (close-journal! journal-atom)
+                  (swap! journal-atom assoc :closed true)))))
 
 ;       (check (= (:journal-index envelope) (filename-number journal-file)) (str "missing journal file number: " (:journal-index envelope)))
 
 (def delete-old-snapshots! cleanup/delete-old-snapshots!)
 
+#_(defn prevayler! [...]
 
+    (let [dir-lease (write-lease/acquire-for! dir sleep-interval close-journal!)]
 
-#_
-(defn prevayler! [...]
+      (reset! journal-out-atom (start-new-journal! dir-lease (:journal-index @state-envelope-atom)))
 
-  (let [
-        dir-lease (write-lease/acquire-for! dir sleep-interval close-journal!)
-        ]
+      (reify
+        api/Prevayler
 
-    
+        (handle! [this event]
+          (locking journal-out-atom ; (I)solation: strict serializability.
+            (write-lease/check! dir-lease)
+            (let [{:keys [state]} @state-envelope-atom
+                  timestamp (timestamp-fn)
+                  new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
+              (when-not (identical? new-state state)
+                ...)
+              new-state)))
 
-    (reset! journal-out-atom (start-new-journal! dir-lease (:journal-index @state-envelope-atom)))
+        (snapshot! [_]
+          (locking snapshot-monitor
+            (let [envelope (locking journal-out-atom
+                             (write-lease/check! dir-lease)
+                             (close-journal!)
+                             (let [envelope (swap! state-envelope-atom update :journal-index inc)
+                                   new-journal (start-new-journal! dir-lease (:journal-index envelope))] ; Prevayler remains closed if this throws Exception. TODO: Recover from what might have been just a network volume hiccup.
+                               (reset! journal-out-atom new-journal)
+                               envelope))]
+              (write-snaphot! envelope dir-lease))))
 
-    (reify
-      api/Prevayler
+        (timestamp [_] (timestamp-fn))
 
-      (handle! [this event]
-        (locking journal-out-atom ; (I)solation: strict serializability.
-          (write-lease/check! dir-lease)
-          (let [{:keys [state]} @state-envelope-atom
-                timestamp (timestamp-fn)
-                new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
-            (when-not (identical? new-state state)
-              ...
-              )
-            new-state)))
-
-      (snapshot! [_]
-        (locking snapshot-monitor
-          (let [envelope (locking journal-out-atom
-                           (write-lease/check! dir-lease)
-                           (close-journal!)
-                           (let [envelope (swap! state-envelope-atom update :journal-index inc)
-                                 new-journal (start-new-journal! dir-lease (:journal-index envelope))] ; Prevayler remains closed if this throws Exception. TODO: Recover from what might have been just a network volume hiccup.
-                             (reset! journal-out-atom new-journal)
-                             envelope))]
-            (write-snaphot! envelope dir-lease))))
-
-      (timestamp [_] (timestamp-fn))
-
-      IDeref (deref [_] (:state @state-envelope-atom)))))
+        IDeref (deref [_] (:state @state-envelope-atom)))))

@@ -28,19 +28,17 @@
     (throw (IllegalStateException. msg)))
   n)
 
-(defn total-file-length [dir & [suffix]]
-  (->> (file-seq (io/file dir))
-       (filter #(.isFile %))
-       (filter #(.endsWith (.getName %) (or suffix "")))
-       (map #(.length %))
-       (apply +)
-       (check-positive "Total file length should be positive.")))
-
 (def t0 1600000000000)  ; System/currentTimeMillis at some arbitrary moment in the past.
 
 (defn- file-names [dir ending]
   (->> (util/sorted-by-number dir ending)
        (map #(.getName %))))
+
+(defn- assert-snapshot-journal [dir snapshot-index journal-index]
+  (let [last-snapshot-index (-> (util/sorted-by-number dir util/snapshot-ending) last util/filename-number)
+        last-journal-index (-> (util/sorted-by-number dir util/journal-ending) last util/filename-number)]
+    (is (= snapshot-index last-snapshot-index))
+    (is (= journal-index last-journal-index))))
 
 (deftest prevayler!-test
   (let [prevayler-dir (tmp-dir)]
@@ -50,6 +48,7 @@
                                  :dir prevayler-dir})]
         (handle! p "Ann")
         (is (-> @p :last-timestamp (> t0)))))
+    (assert-snapshot-journal prevayler-dir 0 0)
     (testing "journal5 is the default file name and it is released after Prevayler is closed (Relevant in Windows)."
       (is (.delete (File. prevayler-dir "000000000.journal5")))))
 
@@ -79,15 +78,19 @@
         (handle! p "Bob")
         (is (= ["Ann" "Bob"] (:contacts @p)))))
 
+    (assert-snapshot-journal prevayler-dir 0 0)
+
     (testing "Restart after some events recovers last state"
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob"] (:contacts @p)))))
 
+    (assert-snapshot-journal prevayler-dir 0 0)
+
     (testing "Events that don't change the state are not journalled"
       (with-open [p (prev!)]
-        (let [previous-length (total-file-length prevayler-dir)]
-          (is (= ["Ann" "Bob"] (:contacts (handle! p "do-nothing"))))
-          (is (= previous-length (total-file-length prevayler-dir))))))
+        (is (= ["Ann" "Bob"] (:contacts (handle! p "do-nothing"))))))
+
+    (assert-snapshot-journal prevayler-dir 0 0)
 
     (testing "Exception during event handle doesn't affect state"
       (with-open [p (prev!)]
@@ -96,15 +99,21 @@
         (handle! p "Cid")
         (is (= ["Ann" "Bob" "Cid"] (:contacts @p)))))
 
+    (assert-snapshot-journal prevayler-dir 0 1)
+
     (testing "Restart after some crash during event handle recovers last state"
       (with-open [p (prev!)]
         (is (= {:contacts ["Ann" "Bob" "Cid"]
                 :last-timestamp 1600000000006}
                @p))))
 
+    (assert-snapshot-journal prevayler-dir 0 1)
+
     (testing "exception during replay"
       (with-out-str
         (is (thrown? IllegalStateException (prevayler! (assoc options :business-fn (fn [_ _ _] (throw (IllegalStateException. "test")))))))))
+
+    (assert-snapshot-journal prevayler-dir 0 1)
 
     (testing "snapshot! saves the state"
       (with-open [p (prev!)]
@@ -116,16 +125,17 @@
                 :last-timestamp 1600000000007}
                @p))))
 
+    (assert-snapshot-journal prevayler-dir 3 2)
+
     (testing "journals are unaffected by snapshot"
       (with-open [p (prev!)]
         (handle! p "Edd")
-        (let [previous-length (total-file-length prevayler-dir "journal5")]
-          (snapshot! p)
-          (is (= previous-length (total-file-length prevayler-dir "journal5"))))))
+        (snapshot! p)))
+
+    (assert-snapshot-journal prevayler-dir 4 3)
 
     (testing "Corrupted snapshot can be deleted"
-      (let [snapshot-file (File. prevayler-dir "000000005.snapshot5")]
-        (prn (file-names prevayler-dir "snapshot5"))
+      (let [snapshot-file (File. prevayler-dir "000000004.snapshot5")]
         (is (.exists snapshot-file))
         (spit snapshot-file "...corruption...")
         (with-out-str
@@ -161,7 +171,7 @@
         (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))
 
     #_(testing ""
-      (with-open [p1 (prev!)]
-        (with-open [_ (prev!)]
-          (is (thrown? Exception
-                       (handle! p1 "Boom"))))))))
+        (with-open [p1 (prev!)]
+          (with-open [_ (prev!)]
+            (is (thrown? Exception
+                         (handle! p1 "Boom"))))))))

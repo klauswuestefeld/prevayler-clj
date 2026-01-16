@@ -43,5 +43,15 @@
   (->> (list-files dir ending)
        (sort-by filename-number)))
 
+(defn missing-number
+  "Receives a sequence of hopefully consecutive numbers. Returns any missing number in that sequence."
+  [consecutive-numbers]
+  (if (<= (count consecutive-numbers) 1)
+    nil
+    (some (fn [[a b]]
+            (when (not= b (inc a))
+              (inc a)))
+          (partition 2 1 consecutive-numbers))))
+
 (defn journals  [dir] (sorted-by-number dir journal-ending))
 (defn snapshots [dir] (sorted-by-number dir snapshot-ending))

@@ -2,8 +2,7 @@
   (:require
    [clojure.java.io :as io]
    [house.jux--.prevayler-impl5--.storage :as storage]
-   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals part-file-ending rename! root-cause snapshot-ending snapshots]]
-   [house.jux--.prevayler-impl5--.cleanup :as cleanup]
+   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals part-file-ending rename! root-cause snapshot-ending snapshots missing-number]]
    [taoensso.nippy :as nippy])
   (:import
    [java.io Closeable DataOutputStream EOFException File]))
@@ -37,7 +36,6 @@
     (println "Writing snapshot" snapshot-name)
     (with-open [^Closeable out (data-output-stream part-file)] ; Overrides old .part file if any.
       (write-with-flush! out state))
-    ; (write-lease/check! dir-lease)
     (rename! part-file (io/file dir snapshot-name))))
 
 (defn- restore-snapshot-if-necessary! [^File dir default-state]
@@ -72,9 +70,11 @@
     (step)))
 
 (defn- restore-events! [journal-files initial-journal-index]
-  (->> journal-files
-       (drop-while #(< (filename-number %) initial-journal-index))
-       (mapcat journaled-events)))
+  (let [relevant-journals (->> journal-files
+                               (drop-while #(< (filename-number %) initial-journal-index)))
+        missing-journal-number (->> relevant-journals (map filename-number) missing-number)]
+    (check (not missing-journal-number) "Unable to restore state. Missing journal file number: " missing-journal-number ". Restore it from backup if possible.")
+    (mapcat journaled-events relevant-journals)))
 
 (defn- open-journal! [dir journal-atom]
   (let [{:keys [index]} @journal-atom
@@ -127,41 +127,3 @@
       Closeable (close [_]
                   (close-journal! journal-atom)
                   (swap! journal-atom assoc :closed true)))))
-
-;       (check (= (:journal-index envelope) (filename-number journal-file)) (str "missing journal file number: " (:journal-index envelope)))
-
-(def delete-old-snapshots! cleanup/delete-old-snapshots!)
-
-#_(defn prevayler! [...]
-
-    (let [dir-lease (write-lease/acquire-for! dir sleep-interval close-journal!)]
-
-      (reset! journal-out-atom (start-new-journal! dir-lease (:journal-index @state-envelope-atom)))
-
-      (reify
-        api/Prevayler
-
-        (handle! [this event]
-          (locking journal-out-atom ; (I)solation: strict serializability.
-            (write-lease/check! dir-lease)
-            (let [{:keys [state]} @state-envelope-atom
-                  timestamp (timestamp-fn)
-                  new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
-              (when-not (identical? new-state state)
-                ...)
-              new-state)))
-
-        (snapshot! [_]
-          (locking snapshot-monitor
-            (let [envelope (locking journal-out-atom
-                             (write-lease/check! dir-lease)
-                             (close-journal!)
-                             (let [envelope (swap! state-envelope-atom update :journal-index inc)
-                                   new-journal (start-new-journal! dir-lease (:journal-index envelope))] ; Prevayler remains closed if this throws Exception. TODO: Recover from what might have been just a network volume hiccup.
-                               (reset! journal-out-atom new-journal)
-                               envelope))]
-              (write-snaphot! envelope dir-lease))))
-
-        (timestamp [_] (timestamp-fn))
-
-        IDeref (deref [_] (:state @state-envelope-atom)))))

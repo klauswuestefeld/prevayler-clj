@@ -10,6 +10,10 @@
 
 (set! *warn-on-reflection* true)
 
+;; TODO: move this to storage implementation
+(def delete-old-snapshots! cleanup/delete-old-snapshots!)
+
+
 (defn- restore! [handler initial-state storage]
   (let [{:keys [snapshot events]} (storage/latest-journal! storage initial-state)]
     (reduce
@@ -17,9 +21,6 @@
        (handler acc event timestamp))
      snapshot
      events)))
-
-;; TODO: move this to storage implementation
-(def delete-old-snapshots! cleanup/delete-old-snapshots!)
 
 (defn prevayler! [{:keys [initial-state business-fn timestamp-fn storage]
                    :or {initial-state {}
@@ -36,9 +37,9 @@
         (locking event-monitor ; (I)solation: strict serializability.
           (let [state @state-atom
                 timestamp (timestamp-fn)
-                new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled when the handler throws an exception.
+                new-state (business-fn state event timestamp)] ; (C)onsistency: must be guaranteed by the handler. The event won't be journalled nor applied when the handler throws an exception.
             (when-not (identical? new-state state)
-              (storage/append-to-journal! storage [timestamp event]) ; (D)urability - If an exception is thrown, the event was not stored and will not be applied.
+              (storage/append-to-journal! storage [timestamp event]) ; (D)urability
               (reset! state-atom new-state))   ; (A)tomicity
             new-state)))
 

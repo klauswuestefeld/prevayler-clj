@@ -3,7 +3,6 @@
    [house.jux--.prevayler-- :refer [handle! timestamp snapshot!]]
    [house.jux--.prevayler-impl5-- :refer [prevayler! delete-old-snapshots!]]
    [house.jux--.prevayler-impl5--.util :as util]
-   [clojure.java.io :as io]
    [clojure.test :refer [deftest is testing]])
   (:import
    [java.io File]))
@@ -22,11 +21,6 @@
 
 (defn- tmp-dir []
   (.toFile (java.nio.file.Files/createTempDirectory "test-" (make-array java.nio.file.attribute.FileAttribute 0))))
-
-(defn- check-positive [msg n]
-  (when-not (pos? n)
-    (throw (IllegalStateException. msg)))
-  n)
 
 (def t0 1600000000000)  ; System/currentTimeMillis at some arbitrary moment in the past.
 
@@ -127,10 +121,11 @@
 
     (assert-snapshot-journal prevayler-dir 3 2)
 
-    (testing "journals are unaffected by snapshot"
+    (testing "Journaling continues after snapshot"
       (with-open [p (prev!)]
         (handle! p "Edd")
-        (snapshot! p)))
+        (snapshot! p)
+        (handle! p "Flo")))
 
     (assert-snapshot-journal prevayler-dir 4 3)
 

@@ -3,16 +3,17 @@
    [house.jux--.prevayler-- :as api]
    [house.jux--.prevayler-impl5--.cleanup :as cleanup]
    [house.jux--.prevayler-impl5--.storage :as storage]
-   [house.jux--.prevayler-impl5--.storage.file-directory :as file-directory])
+   [house.jux--.prevayler-impl5--.storage.file-directory :as file-directory]
+   [house.jux--.prevayler-impl5--.util :as util])
   (:import
    [clojure.lang IDeref]
    [java.io Closeable]))
 
 (set! *warn-on-reflection* true)
 
-;; TODO: move this to storage implementation
+;; TODO: move these to storage implementation
 (def delete-old-snapshots! cleanup/delete-old-snapshots!)
-
+(defn last-snapshot-file [dir] (last (util/snapshots dir)))
 
 (defn- restore! [handler initial-state storage]
   (let [{:keys [snapshot events]} (storage/latest-journal! storage initial-state)]

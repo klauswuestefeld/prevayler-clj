@@ -73,6 +73,7 @@
   (let [relevant-journals (->> journal-files
                                (drop-while #(< (filename-number %) initial-journal-index)))
         missing-journal-number (->> relevant-journals (map filename-number) missing-number)]
+    return [events journal-index] even if there are no journals after snapshot
     (check (not missing-journal-number) "Unable to restore state. Missing journal file number: " missing-journal-number ". Restore it from backup if possible.")
     (mapcat journaled-events relevant-journals)))
 

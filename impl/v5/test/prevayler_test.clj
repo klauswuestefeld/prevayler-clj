@@ -103,13 +103,13 @@
 
     (assert-snapshot-journal prevayler-dir 0 1)
 
-    (testing "exception during replay"
+    (testing "exception during replay is not swallowed"
       (with-out-str
         (is (thrown? IllegalStateException (prevayler! (assoc options :business-fn (fn [_ _ _] (throw (IllegalStateException. "test")))))))))
 
     (assert-snapshot-journal prevayler-dir 0 1)
 
-    (testing "snapshot! saves the state"
+    (testing "snapshot! saves the state and previous journals are not replayed"
       (with-open [p (prev!)]
         (handle! p "Dan")
         (snapshot! p))
@@ -125,9 +125,11 @@
       (with-open [p (prev!)]
         (handle! p "Edd")
         (snapshot! p)
-        (handle! p "Flo")))
+        (handle! p "Flo"))
+      (with-open [p (prev!)]
+        (handle! p "Gil")))
 
-    (assert-snapshot-journal prevayler-dir 4 3)
+    (assert-snapshot-journal prevayler-dir 4 5)
 
     (testing "Corrupted snapshot can be deleted"
       (let [snapshot-file (File. prevayler-dir "000000004.snapshot5")]
@@ -137,36 +139,37 @@
           (is (thrown? clojure.lang.ExceptionInfo (prev!))))
         (.delete snapshot-file))
       (with-open [p (prev!)]
-        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))
+        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd" "Flo" "Gil"] (:contacts @p)))))
 
     (testing "Old snapshot deletion"
       (let [part-file (File. prevayler-dir "000000000.snapshot5.part")]
         (spit part-file "anything"))
       (is (= ["000000000.snapshot5.part"]
              (file-names prevayler-dir ".snapshot5.part")))
-      
+
       (delete-old-snapshots! prevayler-dir {:keep 3})
       (is (= []
              (file-names prevayler-dir ".snapshot5.part"))) ; All .snapshot5.part files were deleted.
       (is (= ["000000000.snapshot5" "000000003.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
-      
+
       (delete-old-snapshots! prevayler-dir {:keep 2})
       (is (= ["000000000.snapshot5" "000000003.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
-      
+
       (delete-old-snapshots! prevayler-dir {:keep 1})
       (is (= ["000000003.snapshot5"]
              (file-names prevayler-dir ".snapshot5")))
-      
-      (is (thrown? RuntimeException 
-                   (delete-old-snapshots! prevayler-dir {:keep 0}))) ; At least one must be kept
-            
-      (with-open [p (prev!)]
-        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd"] (:contacts @p)))))
 
-    #_(testing ""
-        (with-open [p1 (prev!)]
-          (with-open [_ (prev!)]
-            (is (thrown? Exception
-                         (handle! p1 "Boom"))))))))
+      (is (thrown? RuntimeException
+                   (delete-old-snapshots! prevayler-dir {:keep 0}))) ; At least one must be kept
+      
+      (with-open [p (prev!)]
+        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd" "Flo" "Gil"] (:contacts @p)))))
+    
+    (testing "Old journal files can be deleted"
+      (is (.delete (File. prevayler-dir "000000000.journal5")))
+      (is (.delete (File. prevayler-dir "000000001.journal5"))) 
+      (is (.delete (File. prevayler-dir "000000002.journal5"))) 
+      (with-open [p (prev!)]
+        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd" "Flo" "Gil"] (:contacts @p)))))))

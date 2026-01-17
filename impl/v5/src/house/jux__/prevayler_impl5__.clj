@@ -13,7 +13,7 @@
 
 ;; TODO: move these to storage implementation
 (def delete-old-snapshots! cleanup/delete-old-snapshots!)
-(defn last-snapshot-file [dir] (last (util/snapshots dir)))
+(defn last-snapshot-file [dir] (last (util/snapshots-sorted dir)))
 
 (defn- restore! [handler initial-state storage]
   (let [{:keys [snapshot events]} (storage/latest-journal! storage initial-state)]

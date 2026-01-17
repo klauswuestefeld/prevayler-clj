@@ -1,7 +1,7 @@
 (ns house.jux--.prevayler-impl5--.cleanup
   (:require
    [clojure.java.io :as io]
-   [house.jux--.prevayler-impl5--.util :refer [check list-files part-file-ending snapshot-ending snapshots]])
+   [house.jux--.prevayler-impl5--.util :refer [check list-files part-file-ending snapshot-ending snapshots-sorted]])
   (:import
    [java.io File]
    [java.time Instant YearMonth ZoneOffset]))
@@ -45,7 +45,7 @@
 
 (defn- delete-snapshot-files! [dir options]
   (let [max-snapshots-to-keep (:keep options)]
-    (->> (snapshots dir)
+    (->> (snapshots-sorted dir)
          (files-to-delete max-snapshots-to-keep)
          (run! #(.delete ^File %)))))
 

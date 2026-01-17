@@ -2,7 +2,7 @@
   (:require
    [clojure.java.io :as io]
    [house.jux--.prevayler-impl5--.storage :as storage]
-   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals part-file-ending rename! root-cause snapshot-ending snapshots missing-number]]
+   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals-sorted part-file-ending rename! root-cause snapshot-ending snapshots-sorted]]
    [taoensso.nippy :as nippy])
   (:import
    [java.io Closeable DataOutputStream EOFException File]))
@@ -39,7 +39,7 @@
     (rename! part-file (io/file dir snapshot-name))))
 
 (defn- restore-snapshot-if-necessary! [^File dir default-state]
-  (if-some [snapshot-file (last (snapshots dir))]
+  (if-some [snapshot-file (last (snapshots-sorted dir))]
 
     {:state (restore-snapshot! snapshot-file)
      :journal-index (filename-number snapshot-file)}
@@ -57,8 +57,13 @@
         (println "Warning - Exception thrown while reading journal (this is normally OK and can happen when the previous process was killed in the middle of a write):" e))
       (throw (EOFException.)))))
 
-(defn- journaled-events [^File journal-file]
-  (let [^Closeable data-in (data-input-stream journal-file)
+(defn- journal-file [dir index]
+  (io/file dir (format (str filename-number-mask journal-ending) index)))
+
+(defn- read-events! [dir journal-index]
+  (let [^File file (journal-file dir journal-index)
+        _ (check (.exists file) "Unable to restore state. Missing journal file: " file " - Restore it from backup if possible.")
+        ^Closeable data-in (data-input-stream file)
         step (fn step []
                (lazy-seq
                 (if-some [event (try (read-event! data-in)
@@ -69,17 +74,20 @@
                     nil))))]
     (step)))
 
-(defn- restore-events! [journal-files initial-journal-index]
-  (let [relevant-journals (->> journal-files
-                               (drop-while #(< (filename-number %) initial-journal-index)))
-        missing-journal-number (->> relevant-journals (map filename-number) missing-number)]
-    return [events journal-index] even if there are no journals after snapshot
-    (check (not missing-journal-number) "Unable to restore state. Missing journal file number: " missing-journal-number ". Restore it from backup if possible.")
-    (mapcat journaled-events relevant-journals)))
+(defn- restore-events! [dir initial-journal-index]
+  
+;  dont sort. get last
+  (if-some [last-journal-index (some-> (last (journals-sorted dir)) filename-number)]
+    (let [next-journal-index (max initial-journal-index (inc last-journal-index))
+          journal-indexes-to-read (range initial-journal-index next-journal-index)]   ; range does not include the end value
+      {:journal-index next-journal-index
+       :events (mapcat #(read-events! dir %) journal-indexes-to-read)})
+    {:journal-index initial-journal-index
+     :events []}))
 
 (defn- open-journal! [dir journal-atom]
   (let [{:keys [index]} @journal-atom
-        file (io/file dir (format (str filename-number-mask journal-ending) index))]
+        ^File file (journal-file dir index)]
     (check (not (.exists file)) (str "journal file already exists: " file))
     (swap! journal-atom assoc :data-out (-> file data-output-stream))))
 
@@ -104,10 +112,9 @@
       storage/Storage
 
       (latest-journal! [_this default-state]
-        (let [{:keys [state journal-index]} (restore-snapshot-if-necessary! dir default-state)
-              journal-files (journals dir)
-              events (restore-events! journal-files journal-index)]
-          (reset! journal-atom {:index (or (some-> journal-files last filename-number inc) journal-index)})
+        (let [{:keys [state  journal-index]} (restore-snapshot-if-necessary! dir default-state)
+              {:keys [events journal-index]} (restore-events! dir journal-index)]
+          (reset! journal-atom {:index journal-index})
           {:snapshot state
            :events events}))
 
@@ -120,9 +127,9 @@
 
       (start-taking-snapshot! [_this state]
         (close-journal! journal-atom)
-        (let [{:keys [index]} @journal-atom]
+        (let [{:keys [index]} (swap! journal-atom update :index inc)]
           (future
-            (write-snaphot! dir {:journal-index (inc index) :state state})
+            (write-snaphot! dir {:journal-index index :state state})
             :done)))
 
       Closeable (close [_]

@@ -2,7 +2,7 @@
   (:require
    [clojure.java.io :as io]
    [house.jux--.prevayler-impl5--.storage :as storage]
-   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending journals-sorted part-file-ending rename! root-cause snapshot-ending snapshots-sorted]]
+   [house.jux--.prevayler-impl5--.util :refer [check data-input-stream data-output-stream filename-number journal-ending last-journal-number part-file-ending rename! root-cause snapshot-ending snapshots-sorted]]
    [taoensso.nippy :as nippy])
   (:import
    [java.io Closeable DataOutputStream EOFException File]))
@@ -77,8 +77,9 @@
     (step)))
 
 (defn- restore-events! [dir initial-journal-index]
-  (let [next-journal-index (max (or (some-> (last (journals-sorted dir)) filename-number inc) 0)
-                                initial-journal-index)
+  (let [next-journal-index (if-let [last-journal-index (last-journal-number dir)]
+                             (max (inc last-journal-index) initial-journal-index)
+                             initial-journal-index)
         journal-indexes-to-read (range initial-journal-index next-journal-index)]   ; range does not include the end value
     {:journal-index next-journal-index
      :events (mapcat #(read-events! dir %) journal-indexes-to-read)}))
@@ -90,8 +91,6 @@
     (swap! journal-atom assoc :data-out (-> file data-output-stream))))
 
 (defn- data-out! [dir journal-atom]
-  (when (:closed @journal-atom)
-    (throw (ex-info "storage is closed" {})))
   (when-not (:data-out @journal-atom)
     (open-journal! dir journal-atom))
   (:data-out @journal-atom))

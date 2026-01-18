@@ -43,5 +43,12 @@
   (->> (list-files dir ending)
        (sort-by filename-number)))
 
-(defn journals-sorted  [dir] (sorted-by-number dir journal-ending))
-(defn snapshots-sorted [dir] (sorted-by-number dir snapshot-ending))
+(defn snapshots-sorted [dir]
+  (sorted-by-number dir snapshot-ending))
+
+(defn last-journal-number [dir]
+  (let [journal-numbers (->> (list-files dir journal-ending)
+                             (map filename-number))]
+    (if (seq journal-numbers)
+      (apply max journal-numbers)
+      nil)))

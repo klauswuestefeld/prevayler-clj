@@ -125,6 +125,7 @@
       (with-open [p (prev!)]
         (handle! p "Edd")
         (snapshot! p)
+        (snapshot! p) ; Duplicate snapshot is a NOP
         (handle! p "Flo"))
       (with-open [p (prev!)]
         (handle! p "Gil")))

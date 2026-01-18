@@ -32,11 +32,13 @@
 
 (defn- write-snaphot! [dir {:keys [state journal-index]}]
   (let [snapshot-name (format (str filename-number-mask snapshot-ending) journal-index)
+        snapshot-file (io/file dir snapshot-name)
         part-file (io/file dir (str snapshot-name part-file-ending))]
-    (println "Writing snapshot" snapshot-name)
-    (with-open [^Closeable out (data-output-stream part-file)] ; Overrides old .part file if any.
-      (write-with-flush! out state))
-    (rename! part-file (io/file dir snapshot-name))))
+    (when-not (.exists snapshot-file)
+      (println "Writing snapshot" snapshot-name)
+      (with-open [^Closeable out (data-output-stream part-file)] ; Overrides old .part file if any.
+        (write-with-flush! out state))
+      (rename! part-file snapshot-file))))
 
 (defn- restore-snapshot-if-necessary! [^File dir default-state]
   (if-some [snapshot-file (last (snapshots-sorted dir))]
@@ -75,8 +77,6 @@
     (step)))
 
 (defn- restore-events! [dir initial-journal-index]
-  
-;  dont sort. get last
   (if-some [last-journal-index (some-> (last (journals-sorted dir)) filename-number)]
     (let [next-journal-index (max initial-journal-index (inc last-journal-index))
           journal-indexes-to-read (range initial-journal-index next-journal-index)]   ; range does not include the end value
@@ -99,14 +99,16 @@
   (:data-out @journal-atom))
 
 ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
-(defn- close-journal! [journal-atom]
+(defn- bump-journal-if-necessary! [journal-atom]
   (when-some [data-out (:data-out @journal-atom)]
-    (.close ^Closeable data-out))
-  (swap! journal-atom dissoc :data-out))
+    (.close ^Closeable data-out)
+    (swap! journal-atom update :index inc)
+    (swap! journal-atom dissoc :data-out)))
 
 (defn open! [{:keys [^File dir #_sleep-interval]
               #_#_:or {sleep-interval 30000}}]
-  (let [journal-atom (atom nil)]
+  (let [journal-atom (atom nil)
+        check-open! (fn [] (check (not= @journal-atom :closed) "Storage is closed."))]
 
     (reify
       storage/Storage
@@ -119,6 +121,7 @@
            :events events}))
 
       (append-to-journal! [this event]
+        (check-open!)
         (try
           (write-with-flush! (data-out! dir journal-atom) event)
           (catch Exception e
@@ -126,12 +129,14 @@
             (throw e))))
 
       (start-taking-snapshot! [_this state]
-        (close-journal! journal-atom)
-        (let [{:keys [index]} (swap! journal-atom update :index inc)]
+        (check-open!)
+        (bump-journal-if-necessary! journal-atom)
+        (let [{:keys [index]} @journal-atom]
           (future
             (write-snaphot! dir {:journal-index index :state state})
             :done)))
 
-      Closeable (close [_]
-                  (close-journal! journal-atom)
-                  (swap! journal-atom assoc :closed true)))))
+      Closeable
+      (close [_]
+        (bump-journal-if-necessary! journal-atom)
+        (reset! journal-atom :closed)))))

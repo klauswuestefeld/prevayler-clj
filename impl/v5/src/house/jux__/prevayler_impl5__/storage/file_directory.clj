@@ -77,13 +77,11 @@
     (step)))
 
 (defn- restore-events! [dir initial-journal-index]
-  (if-some [last-journal-index (some-> (last (journals-sorted dir)) filename-number)]
-    (let [next-journal-index (max initial-journal-index (inc last-journal-index))
-          journal-indexes-to-read (range initial-journal-index next-journal-index)]   ; range does not include the end value
-      {:journal-index next-journal-index
-       :events (mapcat #(read-events! dir %) journal-indexes-to-read)})
-    {:journal-index initial-journal-index
-     :events []}))
+  (let [next-journal-index (max (or (some-> (last (journals-sorted dir)) filename-number inc) 0)
+                                initial-journal-index)
+        journal-indexes-to-read (range initial-journal-index next-journal-index)]   ; range does not include the end value
+    {:journal-index next-journal-index
+     :events (mapcat #(read-events! dir %) journal-indexes-to-read)}))
 
 (defn- open-journal! [dir journal-atom]
   (let [{:keys [index]} @journal-atom

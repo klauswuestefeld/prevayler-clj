@@ -37,12 +37,21 @@
 ;     Create a lock/{journal-number}.journal-lock directory (MKDIR the only atomic mutually-exclusive operation we can trust. Even file renames will override each other.)
 ;       If it already exists, but the journal file does not, treat the same as an empty journal.
 
-(ns house.jux--.prevayler-impl5--.write-lease)
+(ns house.jux--.prevayler-impl5--.write-lease
+  (:require [clojure.java.io :as io]))
 
 (set! *warn-on-reflection* true)
 
 (defn dir [lease]
   (-> lease deref :dir))
+
+(defn- try-to-replace-lock-dir [^java.io.File lock-dir ^java.io.File new-lock-dir]
+  (doseq [^java.io.File file (.listFiles lock-dir)]
+    (.delete file))
+  (.delete lock-dir)
+  (.renameTo new-lock-dir lock-dir))
+
+(.delete (io/file "xyz"))
 
 (defn acquire-for!
   "Acquires a virtual, exclusive lease to write on dir. Implementation:
@@ -55,15 +64,24 @@
   ;; This "opaque handle + fns" smells like a protocol.
   [dir sleep-interval _on-deposed]
   (let [res (atom {:dir dir
-                   :last-successful-lease-check (System/currentTimeMillis) 
+                   :last-successful-lease-check (System/currentTimeMillis)
                    :sleep-interval sleep-interval})]
-    (future
+    (let [uuid (-> (java.util.UUID/randomUUID) str)
+          lock-dir (io/file dir "lock")
+          new-lock-dir (doto (io/file dir (str "lock-" uuid))
+                         (.mkdir))
+          lock-file (doto (io/file lock-dir (str uuid ".a"))
+                      (spit ""))]
       (loop []
-        ;; TODO implement real check
-        (swap! res assoc :last-successful-lease-check (System/currentTimeMillis))
-        (Thread/sleep ^long sleep-interval)
-        (recur)))
-    res))
+        (when-not (try-to-replace-lock-dir lock-dir new-lock-dir) 
+          (recur))) 
+      (future
+        (loop []
+          ;; TODO implement real check
+          (swap! res assoc :last-successful-lease-check (System/currentTimeMillis))
+          (Thread/sleep ^long sleep-interval)
+          (recur)))
+      res)))
 
 (defn check!
   "Throws an exception with a helpful message in these situations:

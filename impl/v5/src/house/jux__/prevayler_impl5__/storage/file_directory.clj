@@ -95,12 +95,19 @@
     (open-journal! dir journal-atom))
   (:data-out @journal-atom))
 
+
 ; TODO: Call .getFD().sync() on the underlying FileOutputStream to minimize zombie writes (writes that arrive late at the server because they were buffered at the client during a network hiccup)
+(defn- close-journal-if-necessary! [journal-atom]
+  (if-some [data-out (:data-out @journal-atom)]
+    (do
+      (.close ^Closeable data-out)
+      (swap! journal-atom dissoc :data-out)
+      true)
+    false))
+
 (defn- bump-journal-if-necessary! [journal-atom]
-  (when-some [data-out (:data-out @journal-atom)]
-    (.close ^Closeable data-out)
-    (swap! journal-atom update :index inc)
-    (swap! journal-atom dissoc :data-out)))
+  (when (close-journal-if-necessary! journal-atom)
+    (swap! journal-atom update :index inc)))
 
 (defn open! [{:keys [^File dir #_sleep-interval]
               #_#_:or {sleep-interval 30000}}]
@@ -135,5 +142,5 @@
 
       Closeable
       (close [_]
-        (bump-journal-if-necessary! journal-atom)
+        (close-journal-if-necessary! journal-atom)
         (reset! journal-atom :closed)))))

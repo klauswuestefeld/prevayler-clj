@@ -1,4 +1,4 @@
-(defproject house.jux/prevayler-impl5 "2026.01.17"
+(defproject house.jux/prevayler-impl5 "2026.01.23"
   :description "Simple, fast, 100% transparent, ACID persistence in Clojure."
   :url "https://github.com/klauswuestefeld/prevayler-clj"
   :license {:name "BSD"

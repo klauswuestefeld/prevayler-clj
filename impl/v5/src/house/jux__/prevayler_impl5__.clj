@@ -13,6 +13,7 @@
 
 ;; TODO: move these to storage implementation
 (def delete-old-snapshots! cleanup/delete-old-snapshots!)
+(def delete-old-journals!  cleanup/delete-old-journals!)
 (defn last-snapshot-file [dir] (last (util/snapshots-sorted dir)))
 
 (defn- restore! [handler initial-state storage]

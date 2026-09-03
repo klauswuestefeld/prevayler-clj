@@ -1,7 +1,7 @@
 (ns house.jux--.prevayler-impl5--.cleanup
   (:require
    [clojure.java.io :as io]
-   [house.jux--.prevayler-impl5--.util :refer [check list-files part-file-ending snapshot-ending snapshots-sorted]])
+   [house.jux--.prevayler-impl5--.util :refer [check delete! filename-number journals-sorted list-files part-file-ending snapshot-ending snapshots-sorted]])
   (:import
    [java.io File]
    [java.time Instant YearMonth ZoneOffset]))
@@ -39,20 +39,55 @@
     (check (= (last kept-files) newest-file) "Newest backup file (" newest-file ") and last kept file (" (last kept-files) ") should have been the same.") ; Defensive sanity check
     (remove (set kept-files) files-in-order)))
 
+(defn- delete-printing! [description ^File file]
+  (println (str "Deleting " description ": " file))
+  (delete! file))
+
 (defn- delete-snapshot-part-files! [dir]
   (->> (list-files dir (str snapshot-ending part-file-ending))
-       (run! #(.delete ^File %))))
+       (run! (partial delete-printing! "incomplete snapshot"))))
 
-(defn- delete-snapshot-files! [dir options]
-  (let [max-snapshots-to-keep (:keep options)]
-    (->> (snapshots-sorted dir)
-         (files-to-delete max-snapshots-to-keep)
-         (run! #(.delete ^File %)))))
+(defn- delete-snapshot-files! [dir max-snapshots-to-keep]
+  (->> (snapshots-sorted dir)
+       (files-to-delete max-snapshots-to-keep)
+       (run! (partial delete-printing! "old snapshot"))))
 
 (defn delete-old-snapshots!
   "Deletes all snapshot .part files and deletes all but the newest snapshot files.
    Receives options with the number of snapshot files to keep. Example: {:keep 3}"
-  [dir & [options]]
+  [dir {max-snapshots-to-keep :keep}]
   (let [^File dir (io/file dir)]
     (delete-snapshot-part-files! dir)
-    (delete-snapshot-files! dir options)))
+    (delete-snapshot-files! dir max-snapshots-to-keep)))
+
+(defn journals-to-delete
+  "Internal use only.
+   Receives:
+    dir: the prevayler directory
+    bytes-needed: number of bytes that must be free
+    bytes-usable: number of bytes currently free (received instead of read from dir, for easier testing)
+    oldest-snapshot-number: only journals with a smaller file number are candidates
+  Returns seq of journals to delete, oldest first: just enough of them to make bytes-needed available."
+  [dir bytes-needed bytes-usable oldest-snapshot-number]
+  (loop [[journal & remaining] (->> (journals-sorted dir)
+                                    (filter #(< (filename-number %) oldest-snapshot-number)))
+         usable bytes-usable
+         result []]
+    (if (and journal (< usable bytes-needed))
+      (recur remaining (+ usable (.length ^File journal)) (conj result journal))
+      result)))
+
+(defn delete-old-journals!
+  "Deletes old journal files to make space for new snapshots.
+   Deletes nothing when there are no snapshots. Only journals older (smaller file number) than the oldest
+   snapshot are deleted, oldest first, and only as many as necessary to make room for the given number of
+   snapshots the size of the newest one.
+   Receives options with the number of snapshots to make space for. Example: {:snapshot-count-to-make-space-for 3}"
+  [dir {snapshot-count :snapshot-count-to-make-space-for}]
+  (check (and (number? snapshot-count) (pos? snapshot-count)) "Space must be made for at least 1 snapshot")
+  (let [^File dir (io/file dir)]
+    (when-let [snapshots (seq (snapshots-sorted dir))]
+      (let [^File newest-snapshot (last snapshots)
+            bytes-needed (* snapshot-count (.length newest-snapshot))]
+        (->> (journals-to-delete dir bytes-needed (.getUsableSpace dir) (filename-number (first snapshots)))
+             (run! (partial delete-printing! "old journal")))))))

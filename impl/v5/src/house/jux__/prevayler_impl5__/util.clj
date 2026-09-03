@@ -28,6 +28,9 @@
   (check (.renameTo file new-file)
          (str "Unable to rename " file " to " new-file (when (.exists new-file) " (already exists)"))))
 
+(defn delete! [^File file]
+  (check (.delete file) "Unable to delete " file))
+
 (defn list-files [^File dir & [ending]]
   (let [result (->> (.listFiles dir)
                     (filter #(.isFile ^File %)))]
@@ -45,6 +48,9 @@
 
 (defn snapshots-sorted [dir]
   (sorted-by-number dir snapshot-ending))
+
+(defn journals-sorted [dir]
+  (sorted-by-number dir journal-ending))
 
 (defn last-journal-number [dir]
   (let [journal-numbers (->> (list-files dir journal-ending)

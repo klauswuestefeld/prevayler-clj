@@ -1,7 +1,7 @@
 (ns prevayler-test
   (:require
    [house.jux--.prevayler-- :refer [handle! timestamp snapshot!]]
-   [house.jux--.prevayler-impl5-- :refer [prevayler! delete-old-snapshots!]]
+   [house.jux--.prevayler-impl5-- :refer [prevayler! delete-old-journals! delete-old-snapshots!]]
    [house.jux--.prevayler-impl5--.util :as util]
    [clojure.test :refer [deftest is testing]])
   (:import
@@ -168,9 +168,27 @@
       (with-open [p (prev!)]
         (is (= ["Ann" "Bob" "Cid" "Dan" "Edd" "Flo" "Gil"] (:contacts @p)))))
     
-    (testing "Old journal files can be deleted"
-      (is (.delete (File. prevayler-dir "000000000.journal5")))
-      (is (.delete (File. prevayler-dir "000000001.journal5"))) 
-      (is (.delete (File. prevayler-dir "000000002.journal5"))) 
-      (with-open [p (prev!)]
-        (is (= ["Ann" "Bob" "Cid" "Dan" "Edd" "Flo" "Gil"] (:contacts @p)))))))
+    (testing "Old journal deletion"
+      (let [snapshot-file (File. prevayler-dir "000000003.snapshot5") ; The only snapshot left by the block above.
+            space-for-all-journals (inc (quot (.getUsableSpace prevayler-dir) (.length snapshot-file)))]
+
+        (testing "Journals are not deleted when there is no snapshot"
+          (let [empty-dir (tmp-dir)]
+            (spit (File. empty-dir "000000000.journal5") "anything")
+            (delete-old-journals! empty-dir {:snapshot-count-to-make-space-for space-for-all-journals})
+            (is (= ["000000000.journal5"]
+                   (file-names empty-dir util/journal-ending)))))
+
+        (testing "Journals are not deleted when there is already enough free space"
+          (delete-old-journals! prevayler-dir {:snapshot-count-to-make-space-for 1})
+          (is (= ["000000000.journal5" "000000001.journal5" "000000002.journal5" "000000003.journal5"
+                  "000000004.journal5" "000000005.journal5"]
+                 (file-names prevayler-dir util/journal-ending))))
+
+        (testing "Only journals older than the oldest snapshot are deleted"
+          (delete-old-journals! prevayler-dir {:snapshot-count-to-make-space-for space-for-all-journals})
+          (is (= ["000000003.journal5" "000000004.journal5" "000000005.journal5"]
+                 (file-names prevayler-dir util/journal-ending))))
+
+        (with-open [p (prev!)]
+          (is (= ["Ann" "Bob" "Cid" "Dan" "Edd" "Flo" "Gil"] (:contacts @p))))))))
